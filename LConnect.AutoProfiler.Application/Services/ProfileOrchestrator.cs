@@ -1,6 +1,7 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using LConnect.AutoProfiler.Application.Exceptions;   // ← ajout du using manquant
 using LConnect.AutoProfiler.Core.Interfaces;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -42,7 +43,6 @@ public sealed class ProfileOrchestrator : BackgroundService
 
         _logger.LogInformation("ProfileOrchestrator started — watching foreground window…");
 
-        // Bloquer proprement jusqu'à l'arrêt du service
         return Task.Delay(Timeout.Infinite, stoppingToken)
                    .ContinueWith(_ =>
                    {
@@ -53,7 +53,6 @@ public sealed class ProfileOrchestrator : BackgroundService
 
     private async void OnForegroundProcessChanged(object? sender, string processName)
     {
-        // Évite de renvoyer exactement le même profil en boucle
         if (string.Equals(processName, _lastProcessName, StringComparison.OrdinalIgnoreCase))
             return;
 
