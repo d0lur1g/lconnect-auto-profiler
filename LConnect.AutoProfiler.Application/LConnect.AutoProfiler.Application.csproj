@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Référence uniquement Core — jamais Infrastructure ni Host -->
+    <ProjectReference Include="..\LConnect.AutoProfiler.Core\LConnect.AutoProfiler.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- BackgroundService + IOptions -->
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="8.*" />
+    <PackageReference Include="Microsoft.Extensions.Options"              Version="8.*" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.*" />
+  </ItemGroup>
+
+</Project>

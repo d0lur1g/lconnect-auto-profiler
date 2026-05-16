@@ -1,5 +1,26 @@
+# Build outputs
 bin/
 obj/
+publish/
+
+# Visual Studio
 .vs/
 *.user
 *.suo
+*.userosscache
+*.sln.docstates
+
+# Rider
+.idea/
+
+# NuGet
+*.nupkg
+*.snupkg
+packages/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Profiles (données personnelles, non versionnées)
+**/profiles/*.json

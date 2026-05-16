@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>  <!-- windows TFM requis pour P/Invoke user32.dll -->
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Références aux couches Core et Application -->
+    <ProjectReference Include="..\LConnect.AutoProfiler.Core\LConnect.AutoProfiler.Core.csproj" />
+    <ProjectReference Include="..\LConnect.AutoProfiler.Application\LConnect.AutoProfiler.Application.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- HTTP + JSON + Logging -->
+    <PackageReference Include="Microsoft.Extensions.Http"                 Version="8.*" />
+    <PackageReference Include="Microsoft.Extensions.Options"              Version="8.*" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.*" />
+  </ItemGroup>
+
+</Project>

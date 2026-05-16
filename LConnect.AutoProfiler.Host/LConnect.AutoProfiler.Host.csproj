@@ -1,0 +1,42 @@
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>LConnect.AutoProfiler.Host</RootNamespace>
+    <AssemblyName>LConnect.AutoProfiler.Host</AssemblyName>
+
+    <!-- Publication autonome (self-contained) -->
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Références à toutes les couches -->
+    <ProjectReference Include="..\LConnect.AutoProfiler.Application\LConnect.AutoProfiler.Application.csproj" />
+    <ProjectReference Include="..\LConnect.AutoProfiler.Infrastructure\LConnect.AutoProfiler.Infrastructure.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Service Windows natif + logs console/EventLog -->
+    <PackageReference Include="Microsoft.Extensions.Hosting"                     Version="8.*" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices"     Version="8.*" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Console"             Version="8.*" />
+    <PackageReference Include="Microsoft.Extensions.Logging.EventLog"            Version="8.*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Copier appsettings.json dans le répertoire de sortie -->
+    <None Update="appsettings.json">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+    <None Update="appsettings.Development.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+</Project>
