@@ -22,6 +22,10 @@ public sealed class JsonProfileParser : IProfileParser
     private const int SubTypeGaII = 16789504;
     private const int SubTypeAio  = 16846849;
 
+    // Valeur par défaut conformément au JSON de référence (Program.cs)
+    private const int DefaultAioSpeed      = 75;
+    private const int DefaultAioBrightness = 100;
+
     private readonly ProfileParserOptions _options;
     private readonly IHostEnvironment _env;
     private readonly ILogger<JsonProfileParser> _logger;
@@ -323,17 +327,15 @@ public sealed class JsonProfileParser : IProfileParser
 
         _logger.LogDebug("[AIO] active screen profile: '{Key}' (mode {Mode})", activeKey, targetMode);
 
-        var isDynamic   = activeNode["IsDynamicMode"]?.GetValue<bool>() ?? false;
-        var sensorType  = 1;
-        var highValue   = 60;
-        var lowValue    = 30;
+        var isDynamic  = activeNode["IsDynamicMode"]?.GetValue<bool>() ?? false;
+        var sensorType = 1;
+        var highValue  = 60;
+        var lowValue   = 30;
 
-        // En mode dynamique : lire sensorType + plages haute/basse
         if (isDynamic)
         {
             var dynSettings = activeNode["DynamicSettings"]?.AsObject();
             if (dynSettings is not null)
-            {
                 foreach (var sensorEntry in dynSettings)
                 {
                     sensorType = ResolveSensorType(sensorEntry.Key);
@@ -341,28 +343,24 @@ public sealed class JsonProfileParser : IProfileParser
                     lowValue   = sensorEntry.Value?["LowValue"]?.GetValue<int>()  ?? 30;
                     break;
                 }
-            }
         }
 
         // -----------------------------------------------------------------------
-        // Source des couleurs/vitesse/brightness/direction :
+        // Source des couleurs/speed/brightness/direction :
         //   - Mode statique  : noeud "Static" du profil actif
-        //   - Mode dynamique : noeud "High" de DynamicSettings (source principale)
+        //   - Mode dynamique : noeud "High" de DynamicSettings (fallback: "Static")
         //
         // L'API L-Connect exige que Static, DynamicHigh et DynamicLow soient
-        // IDENTIQUES (mêmes couleurs, même Speed, même Brightness, même Direction)
-        // comme démontré par le JSON de référence et le Program.cs.
+        // IDENTIQUES — mêmes couleurs, même Speed (75), Brightness (100), Direction.
         // -----------------------------------------------------------------------
         AioLightingSection sourceSection;
 
         if (!isDynamic)
         {
-            // Mode statique : source = noeud "Static"
             sourceSection = ExtractAioSection(activeNode["Static"]);
         }
         else
         {
-            // Mode dynamique : source = noeud "High" de DynamicSettings
             var dynSettings = activeNode["DynamicSettings"]?.AsObject();
             JsonNode? highNode = null;
             if (dynSettings is not null)
@@ -371,16 +369,14 @@ public sealed class JsonProfileParser : IProfileParser
 
             sourceSection = ExtractAioSection(highNode);
 
-            // Fallback : si High absent, essayer Static
             if (sourceSection.Colors.Count == 0)
                 sourceSection = ExtractAioSection(activeNode["Static"]);
         }
 
         _logger.LogDebug(
-            "[AIO] source section: {Count} color(s), Speed={Speed}, Brightness={Brightness}",
-            sourceSection.Colors.Count, sourceSection.Speed, sourceSection.Brightness);
+            "[AIO] source section: {Count} color(s), Speed={Speed}, Brightness={Brightness}, Direction={Direction}",
+            sourceSection.Colors.Count, sourceSection.Speed, sourceSection.Brightness, sourceSection.Direction);
 
-        // Les 3 sections sont identiques — conforme JSON de référence
         return new AioLightingConfig
         {
             Mode          = targetMode,
@@ -399,19 +395,33 @@ public sealed class JsonProfileParser : IProfileParser
         };
     }
 
+    /// <summary>
+    /// Extrait Speed, Brightness, Direction et Colors depuis un noeud JSON AIO.
+    /// Speed : lu depuis le JSON ; fallback à 75 si null ou 0 (conformément JSON référence).
+    /// Brightness : toujours 100.
+    /// Direction  : lu depuis le JSON ; 0 si absent.
+    /// </summary>
     private static AioLightingSection ExtractAioSection(JsonNode? node)
     {
-        if (node is null) return new AioLightingSection();
+        if (node is null)
+            return new AioLightingSection
+            {
+                Speed      = DefaultAioSpeed,
+                Brightness = DefaultAioBrightness,
+                Direction  = 0,
+                Colors     = new List<LightingColor>()
+            };
 
-        var speedNode = node["Speed"];
-        var speed     = (speedNode is not null && speedNode.GetValueKind() != System.Text.Json.JsonValueKind.Null)
-                        ? speedNode.GetValue<int>()
-                        : 0;
+        var speedNode  = node["Speed"];
+        var speedRaw   = (speedNode is not null && speedNode.GetValueKind() != System.Text.Json.JsonValueKind.Null)
+                         ? speedNode.GetValue<int>()
+                         : 0;
+        var speed      = speedRaw > 0 ? speedRaw : DefaultAioSpeed;
 
         return new AioLightingSection
         {
             Speed      = speed,
-            Brightness = 100,
+            Brightness = DefaultAioBrightness,   // toujours 100
             Direction  = node["Direction"] is not null ? node["Direction"]!.GetValue<int>() : 0,
             Colors     = ExtractColors(node["Colors"]?.AsArray())
         };
