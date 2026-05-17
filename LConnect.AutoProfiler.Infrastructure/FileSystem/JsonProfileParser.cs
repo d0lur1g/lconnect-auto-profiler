@@ -22,10 +22,6 @@ public sealed class JsonProfileParser : IProfileParser
     private const int SubTypeGaII = 16789504;
     private const int SubTypeAio  = 16846849;
 
-    // Valeur par défaut conformément au JSON de référence (Program.cs)
-    private const int DefaultAioSpeed      = 75;
-    private const int DefaultAioBrightness = 100;
-
     private readonly ProfileParserOptions _options;
     private readonly IHostEnvironment _env;
     private readonly ILogger<JsonProfileParser> _logger;
@@ -346,12 +342,13 @@ public sealed class JsonProfileParser : IProfileParser
         }
 
         // -----------------------------------------------------------------------
-        // Source des couleurs/speed/brightness/direction :
+        // Source des valeurs (Colors, Speed, Brightness, Direction) :
         //   - Mode statique  : noeud "Static" du profil actif
-        //   - Mode dynamique : noeud "High" de DynamicSettings (fallback: "Static")
+        //   - Mode dynamique : noeud "High" de DynamicSettings (fallback : "Static")
         //
-        // L'API L-Connect exige que Static, DynamicHigh et DynamicLow soient
-        // IDENTIQUES — mêmes couleurs, même Speed (75), Brightness (100), Direction.
+        // Toutes les valeurs sont lues depuis le JSON du profil.
+        // Static, DynamicHigh et DynamicLow reçoivent la même section
+        // (conformément au JSON de référence).
         // -----------------------------------------------------------------------
         AioLightingSection sourceSection;
 
@@ -397,31 +394,19 @@ public sealed class JsonProfileParser : IProfileParser
 
     /// <summary>
     /// Extrait Speed, Brightness, Direction et Colors depuis un noeud JSON AIO.
-    /// Speed : lu depuis le JSON ; fallback à 75 si null ou 0 (conformément JSON référence).
-    /// Brightness : toujours 100.
-    /// Direction  : lu depuis le JSON ; 0 si absent.
+    /// Toutes les valeurs proviennent exclusivement du JSON du profil actif.
     /// </summary>
     private static AioLightingSection ExtractAioSection(JsonNode? node)
     {
-        if (node is null)
-            return new AioLightingSection
-            {
-                Speed      = DefaultAioSpeed,
-                Brightness = DefaultAioBrightness,
-                Direction  = 0,
-                Colors     = new List<LightingColor>()
-            };
+        if (node is null) return new AioLightingSection();
 
-        var speedNode  = node["Speed"];
-        var speedRaw   = (speedNode is not null && speedNode.GetValueKind() != System.Text.Json.JsonValueKind.Null)
-                         ? speedNode.GetValue<int>()
-                         : 0;
-        var speed      = speedRaw > 0 ? speedRaw : DefaultAioSpeed;
+        var speedNode      = node["Speed"];
+        var brightnessNode = node["Brightness"];
 
         return new AioLightingSection
         {
-            Speed      = speed,
-            Brightness = DefaultAioBrightness,   // toujours 100
+            Speed      = (speedNode      is not null && speedNode.GetValueKind()      != System.Text.Json.JsonValueKind.Null) ? speedNode.GetValue<int>()      : 0,
+            Brightness = (brightnessNode is not null && brightnessNode.GetValueKind() != System.Text.Json.JsonValueKind.Null) ? brightnessNode.GetValue<int>() : 0,
             Direction  = node["Direction"] is not null ? node["Direction"]!.GetValue<int>() : 0,
             Colors     = ExtractColors(node["Colors"]?.AsArray())
         };
