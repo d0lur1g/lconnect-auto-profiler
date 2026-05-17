@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Text.Json.Nodes;
 using System.Threading.Tasks;
 using LConnect.AutoProfiler.Application.Exceptions;
@@ -325,78 +324,63 @@ public sealed class JsonProfileParser : IProfileParser
         _logger.LogDebug("[AIO] active screen profile: '{Key}' (mode {Mode})", activeKey, targetMode);
 
         var isDynamic   = activeNode["IsDynamicMode"]?.GetValue<bool>() ?? false;
-        var staticNode  = activeNode["Static"];
-        var dynSettings = activeNode["DynamicSettings"]?.AsObject();
+        var sensorType  = 1;
+        var highValue   = 60;
+        var lowValue    = 30;
 
-        var sensorType = 1;
-        JsonNode? highNode = null;
-        JsonNode? lowNode  = null;
-        var highValue = 60;
-        var lowValue  = 30;
-
-        if (isDynamic && dynSettings is not null)
+        // En mode dynamique : lire sensorType + plages haute/basse
+        if (isDynamic)
         {
-            foreach (var sensorEntry in dynSettings)
+            var dynSettings = activeNode["DynamicSettings"]?.AsObject();
+            if (dynSettings is not null)
             {
-                sensorType = ResolveSensorType(sensorEntry.Key);
-                highNode   = sensorEntry.Value?["High"];
-                lowNode    = sensorEntry.Value?["Low"];
-                highValue  = sensorEntry.Value?["HighValue"]?.GetValue<int>() ?? 60;
-                lowValue   = sensorEntry.Value?["LowValue"]?.GetValue<int>()  ?? 30;
-                break;
+                foreach (var sensorEntry in dynSettings)
+                {
+                    sensorType = ResolveSensorType(sensorEntry.Key);
+                    highValue  = sensorEntry.Value?["HighValue"]?.GetValue<int>() ?? 60;
+                    lowValue   = sensorEntry.Value?["LowValue"]?.GetValue<int>()  ?? 30;
+                    break;
+                }
             }
         }
 
-        // Extraire les 3 sections depuis le JSON
-        var staticSection  = ExtractAioSection(staticNode);
-        var highSection    = ExtractAioSection(highNode);
-        var lowSection     = ExtractAioSection(lowNode);
-
         // -----------------------------------------------------------------------
-        // L'API L-Connect exige que Static, DynamicHigh et DynamicLow soient
-        // toujours remplis avec des couleurs, même en mode statique.
-        // (Confirmé par Program.cs référence : les 3 sections reçoivent
-        //  toujours les mêmes couleurs.)
+        // Source des couleurs/vitesse/brightness/direction :
+        //   - Mode statique  : noeud "Static" du profil actif
+        //   - Mode dynamique : noeud "High" de DynamicSettings (source principale)
         //
-        // Règle de propagation :
-        //  - Mode statique : staticNode est la source, high/low reçoivent
-        //    ses couleurs s'ils sont vides.
-        //  - Mode dynamique : si staticNode est absent/vide, Static
-        //    reçoit les couleurs de DynamicHigh.
-        //  - Fallback final : toute section vide reçoit les couleurs de
-        //    la première section non vide.
+        // L'API L-Connect exige que Static, DynamicHigh et DynamicLow soient
+        // IDENTIQUES (mêmes couleurs, même Speed, même Brightness, même Direction)
+        // comme démontré par le JSON de référence et le Program.cs.
         // -----------------------------------------------------------------------
-        var referenceColors = staticSection.Colors.Count > 0
-            ? staticSection.Colors
-            : highSection.Colors.Count > 0
-                ? highSection.Colors
-                : lowSection.Colors;
+        AioLightingSection sourceSection;
 
-        if (staticSection.Colors.Count == 0)
-            staticSection = staticSection with { Colors = referenceColors };
+        if (!isDynamic)
+        {
+            // Mode statique : source = noeud "Static"
+            sourceSection = ExtractAioSection(activeNode["Static"]);
+        }
+        else
+        {
+            // Mode dynamique : source = noeud "High" de DynamicSettings
+            var dynSettings = activeNode["DynamicSettings"]?.AsObject();
+            JsonNode? highNode = null;
+            if (dynSettings is not null)
+                foreach (var sensorEntry in dynSettings)
+                { highNode = sensorEntry.Value?["High"]; break; }
 
-        if (highSection.Colors.Count == 0)
-            highSection = highSection with
-            {
-                Colors     = referenceColors,
-                Speed      = staticSection.Speed,
-                Brightness = staticSection.Brightness,
-                Direction  = staticSection.Direction
-            };
+            sourceSection = ExtractAioSection(highNode);
 
-        if (lowSection.Colors.Count == 0)
-            lowSection = lowSection with
-            {
-                Colors     = referenceColors,
-                Speed      = staticSection.Speed,
-                Brightness = staticSection.Brightness,
-                Direction  = staticSection.Direction
-            };
+            // Fallback : si High absent, essayer Static
+            if (sourceSection.Colors.Count == 0)
+                sourceSection = ExtractAioSection(activeNode["Static"]);
+        }
 
         _logger.LogDebug(
-            "[AIO] Static={SC} color(s), DynamicHigh={HC} color(s), DynamicLow={LC} color(s)",
-            staticSection.Colors.Count, highSection.Colors.Count, lowSection.Colors.Count);
+            "[AIO] source section: {Count} color(s), Speed={Speed}, Brightness={Brightness}",
+            sourceSection.Colors.Count, sourceSection.Speed, sourceSection.Brightness);
 
+        // Les 3 sections sont identiques — conforme JSON de référence
         return new AioLightingConfig
         {
             Mode          = targetMode,
@@ -409,9 +393,9 @@ public sealed class JsonProfileParser : IProfileParser
                 MaxValue  = 100,
                 MinValue  = 0
             },
-            Static      = staticSection,
-            DynamicHigh = highSection,
-            DynamicLow  = lowSection
+            Static      = sourceSection,
+            DynamicHigh = sourceSection,
+            DynamicLow  = sourceSection
         };
     }
 
