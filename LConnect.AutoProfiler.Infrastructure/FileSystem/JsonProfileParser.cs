@@ -79,7 +79,6 @@ public sealed class JsonProfileParser : IProfileParser
         var subProfiles = dataEntry["Data"]?["SubProfiles"]?.AsArray();
         if (subProfiles is null || subProfiles.Count == 0) return;
 
-        // --- LightingSetting ---
         var lightingConfig = new DeviceConfig
         {
             DevicePath = devicePath,
@@ -87,7 +86,6 @@ public sealed class JsonProfileParser : IProfileParser
             Settings   = new List<LightingSetting>()
         };
 
-        // --- SetFanSpeed ---
         var fanConfig = new DeviceConfig
         {
             DevicePath = devicePath,
@@ -107,7 +105,6 @@ public sealed class JsonProfileParser : IProfileParser
             _logger.LogDebug("GA II Group[{Index}] '{Name}': Inner={Inner}, Outer={Outer}",
                 groupIndex, groupName, activeInner, activeOuter);
 
-            // Lighting
             var allSettings = groupNode["LightingSettings"]?.AsObject();
             if (allSettings is not null)
             {
@@ -117,13 +114,12 @@ public sealed class JsonProfileParser : IProfileParser
                     ExtractActiveLightingSetting(allSettings, activeOuter, port: groupIndex * 2 + 1, label: $"{groupName} Outer"));
             }
 
-            // Fan speed (RPMSetting)
             var rpmSetting = groupNode["RPMSetting"];
             if (rpmSetting is not null)
             {
-                var activeMode   = rpmSetting["Mode"]?.GetValue<int>() ?? 1;
-                var fanProfiles  = rpmSetting["Profiles"]?.AsObject();
-                var fanCurve     = ExtractActiveFanCurve(fanProfiles, activeMode, groupName, rpmSetting);
+                var activeMode  = rpmSetting["Mode"]?.GetValue<int>() ?? 1;
+                var fanProfiles = rpmSetting["Profiles"]?.AsObject();
+                var fanCurve    = ExtractActiveFanCurve(fanProfiles, activeMode, groupName);
                 if (fanCurve is not null)
                     fanConfig.FanGroups!.Add(new FanGroupConfig { FanGroupIndex = groupIndex, Config = fanCurve });
             }
@@ -148,49 +144,41 @@ public sealed class JsonProfileParser : IProfileParser
         var data       = dataEntry["Data"];
         if (data is null) return;
 
-        // --- ScreenLEDLighting ---
+        // ScreenLEDLighting
         var screenProfiles   = data["ScreenLEDProfiles"]?.AsObject();
         var activeScreenMode = data["ScreenLEDMode"]?.GetValue<int>() ?? 1;
         var aioLighting      = ExtractAioLighting(screenProfiles, activeScreenMode);
         if (aioLighting is not null)
-        {
             profile.Devices.Add(new DeviceConfig
             {
-                DevicePath = devicePath,
-                DeviceType = "ScreenLEDLighting",
+                DevicePath  = devicePath,
+                DeviceType  = "ScreenLEDLighting",
                 AioLighting = aioLighting
             });
-        }
 
-        // --- PumpSpeed ---
-        var pumpSetting   = data["Pump"];
+        // PumpSpeed
+        var pumpSetting    = data["Pump"];
         var activePumpMode = pumpSetting?["Mode"]?.GetValue<int>() ?? 10;
-        var pumpProfiles  = pumpSetting?["Profiles"]?.AsObject();
-        var pumpCurve     = ExtractActiveFanCurve(pumpProfiles, activePumpMode, "Pump", pumpSetting);
+        var pumpCurve      = ExtractActiveFanCurve(pumpSetting?["Profiles"]?.AsObject(), activePumpMode, "Pump");
         if (pumpCurve is not null)
-        {
             profile.Devices.Add(new DeviceConfig
             {
                 DevicePath = devicePath,
                 DeviceType = "PumpSpeed",
                 FanCurve   = pumpCurve
             });
-        }
 
-        // --- FanSpeed ---
-        var fanSetting   = data["Fan"];
+        // FanSpeed
+        var fanSetting    = data["Fan"];
         var activeFanMode = fanSetting?["Mode"]?.GetValue<int>() ?? 1;
-        var fanProfiles  = fanSetting?["Profiles"]?.AsObject();
-        var fanCurve     = ExtractActiveFanCurve(fanProfiles, activeFanMode, "AIO Fan", fanSetting);
+        var fanCurve      = ExtractActiveFanCurve(fanSetting?["Profiles"]?.AsObject(), activeFanMode, "AIO Fan");
         if (fanCurve is not null)
-        {
             profile.Devices.Add(new DeviceConfig
             {
                 DevicePath = devicePath,
                 DeviceType = "FanSpeed",
                 FanCurve   = fanCurve
             });
-        }
     }
 
     // =========================================================================
@@ -231,18 +219,13 @@ public sealed class JsonProfileParser : IProfileParser
         return new LightingSetting { Port = port, Mode = targetMode };
     }
 
-    /// <summary>
-    /// Extrait la FanCurveConfig active depuis un objet Profiles L-Connect.
-    /// Le discriminant est le champ "Mode" de chaque profil enfant.
-    /// </summary>
     private FanCurveConfig? ExtractActiveFanCurve(
-        JsonObject? profiles, int targetMode, string label, JsonNode? settingNode)
+        JsonObject? profiles, int targetMode, string label)
     {
         if (profiles is null) return null;
 
-        // Clé du profil actif = première clé dont le "Mode" == targetMode
-        string? activeKey = null;
         JsonNode? activeProfileNode = null;
+        string?  activeKey         = null;
 
         foreach (var entry in profiles)
         {
@@ -262,21 +245,14 @@ public sealed class JsonProfileParser : IProfileParser
 
         _logger.LogDebug("[{Label}] active fan profile: '{Key}' (mode {Mode})", label, activeKey, targetMode);
 
-        // On prend la première clé de PhaseInfos (ex: "Size120mm|CPU|Curve" ou "None|CPU|Curve")
         var phaseInfos = activeProfileNode["PhaseInfos"]?.AsObject();
         if (phaseInfos is null) return null;
 
         JsonNode? phaseInfo = null;
-        foreach (var pi in phaseInfos)
-        {
-            phaseInfo = pi.Value;
-            break;
-        }
+        foreach (var pi in phaseInfos) { phaseInfo = pi.Value; break; }
         if (phaseInfo is null) return null;
 
-        var maxSpeed = phaseInfo["MaxSpeed"]?.GetValue<int>() ?? 100;
-        var phases   = new List<FanPhase>();
-
+        var phases = new List<FanPhase>();
         foreach (var phaseNode in phaseInfo["Phases"]?.AsArray() ?? new JsonArray())
         {
             if (phaseNode is null) continue;
@@ -289,16 +265,12 @@ public sealed class JsonProfileParser : IProfileParser
 
         return new FanCurveConfig
         {
-            MaxSpeed  = maxSpeed,
+            MaxSpeed  = phaseInfo["MaxSpeed"]?.GetValue<int>() ?? 100,
             Reference = activeProfileNode["RPMReferenceSource"]?.GetValue<int>() ?? 0,
             Phases    = phases
         };
     }
 
-    /// <summary>
-    /// Extrait l'AioLightingConfig active depuis ScreenLEDProfiles.
-    /// Le discriminant est le champ "Mode" de chaque profil enfant.
-    /// </summary>
     private AioLightingConfig? ExtractAioLighting(JsonObject? screenProfiles, int targetMode)
     {
         if (screenProfiles is null) return null;
@@ -326,37 +298,36 @@ public sealed class JsonProfileParser : IProfileParser
 
         var isDynamic   = activeNode["IsDynamicMode"]?.GetValue<bool>() ?? false;
         var staticNode  = activeNode["Static"];
-        var dynSettings = activeNode["DynamicSettings"];
+        var dynSettings = activeNode["DynamicSettings"]?.AsObject();
 
-        // SensorType : 1=CPUTemp, 2=GPUTemp, 3=CPULoad, 4=GPULoad (première clé de DynamicSettings)
         var sensorType = 1;
         JsonNode? highNode = null;
         JsonNode? lowNode  = null;
+        var highValue = 60;
+        var lowValue  = 30;
+
         if (isDynamic && dynSettings is not null)
         {
-            foreach (var sensorEntry in dynSettings.AsObject())
+            foreach (var sensorEntry in dynSettings)
             {
                 sensorType = ResolveSensorType(sensorEntry.Key);
                 highNode   = sensorEntry.Value?["High"];
                 lowNode    = sensorEntry.Value?["Low"];
+                highValue  = sensorEntry.Value?["HighValue"]?.GetValue<int>() ?? 60;
+                lowValue   = sensorEntry.Value?["LowValue"]?.GetValue<int>()  ?? 30;
                 break;
             }
         }
 
-        var highValue = dynSettings?.AsObject()
-            .FirstOrDefault().Value?[ResolveSensorKey(sensorType)]?["HighValue"]?.GetValue<int>() ?? 60;
-        var lowValue  = dynSettings?.AsObject()
-            .FirstOrDefault().Value?[ResolveSensorKey(sensorType)]?["LowValue"]?.GetValue<int>()  ?? 30;
-
         return new AioLightingConfig
         {
-            Mode         = targetMode,
+            Mode          = targetMode,
             IsDynamicMode = isDynamic,
-            SensorType   = sensorType,
-            Range        = new SensorRange { HighValue = highValue, LowValue = lowValue },
-            Static       = ExtractAioSection(staticNode),
-            DynamicHigh  = ExtractAioSection(highNode),
-            DynamicLow   = ExtractAioSection(lowNode)
+            SensorType    = sensorType,
+            Range         = new SensorRange { HighValue = highValue, LowValue = lowValue },
+            Static        = ExtractAioSection(staticNode),
+            DynamicHigh   = ExtractAioSection(highNode),
+            DynamicLow    = ExtractAioSection(lowNode)
         };
     }
 
@@ -383,17 +354,10 @@ public sealed class JsonProfileParser : IProfileParser
         _                => 1
     };
 
-    private static string ResolveSensorKey(int sensorType) => sensorType switch
-    {
-        1 => "CPUTemperature",
-        2 => "GPUTemperature",
-        3 => "CPULoad",
-        4 => "GPULoad",
-        5 => "PumpRPM",
-        6 => "CoolantTemp",
-        _ => "CPUTemperature"
-    };
-
+    /// <summary>
+    /// Lit les ScR/ScG/ScB directement depuis le JSON (valeurs stockées par L-Connect).
+    /// Ne recalcule pas via gamma 2.2 pour éviter toute divergence.
+    /// </summary>
     private static List<LightingColor> ExtractColors(JsonArray? colorsArray)
     {
         if (colorsArray is null) return new List<LightingColor>();
@@ -415,10 +379,10 @@ public sealed class JsonProfileParser : IProfileParser
                 R   = r,
                 G   = g,
                 B   = b,
-                ScA = 1.0,
-                ScR = Math.Pow(r / 255.0, 2.2),
-                ScG = Math.Pow(g / 255.0, 2.2),
-                ScB = Math.Pow(b / 255.0, 2.2),
+                ScA = colorNode["ScA"]?.GetValue<double>() ?? 1.0,
+                ScR = colorNode["ScR"]?.GetValue<double>() ?? Math.Pow(r / 255.0, 2.2),
+                ScG = colorNode["ScG"]?.GetValue<double>() ?? Math.Pow(g / 255.0, 2.2),
+                ScB = colorNode["ScB"]?.GetValue<double>() ?? Math.Pow(b / 255.0, 2.2),
             });
         }
         return result;
