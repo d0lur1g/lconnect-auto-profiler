@@ -60,7 +60,6 @@ public sealed class JsonProfileParser : IProfileParser
                 ParseGaII(dataEntry, profile);
             else if (subType == SubTypeAio)
                 ParseAio(dataEntry, profile);
-            // MainType 1 et 2 ignorés (MergeLightingSetting, etc.)
         }
 
         _logger.LogInformation("Profile '{Name}' parsed: {DeviceCount} device(s).",
@@ -144,7 +143,6 @@ public sealed class JsonProfileParser : IProfileParser
         var data       = dataEntry["Data"];
         if (data is null) return;
 
-        // ScreenLEDLighting
         var screenProfiles   = data["ScreenLEDProfiles"]?.AsObject();
         var activeScreenMode = data["ScreenLEDMode"]?.GetValue<int>() ?? 1;
         var aioLighting      = ExtractAioLighting(screenProfiles, activeScreenMode);
@@ -156,7 +154,6 @@ public sealed class JsonProfileParser : IProfileParser
                 AioLighting = aioLighting
             });
 
-        // PumpSpeed
         var pumpSetting    = data["Pump"];
         var activePumpMode = pumpSetting?["Mode"]?.GetValue<int>() ?? 10;
         var pumpCurve      = ExtractActiveFanCurve(pumpSetting?["Profiles"]?.AsObject(), activePumpMode, "Pump");
@@ -168,7 +165,6 @@ public sealed class JsonProfileParser : IProfileParser
                 FanCurve   = pumpCurve
             });
 
-        // FanSpeed
         var fanSetting    = data["Fan"];
         var activeFanMode = fanSetting?["Mode"]?.GetValue<int>() ?? 1;
         var fanCurve      = ExtractActiveFanCurve(fanSetting?["Profiles"]?.AsObject(), activeFanMode, "AIO Fan");
@@ -204,13 +200,19 @@ public sealed class JsonProfileParser : IProfileParser
 
             _logger.LogDebug("  [{Label}] mode {Mode} -> '{Key}'", label, targetMode, entry.Key);
 
+            // Speed stocké en % dans le JSON (0-100), l'API attend une valeur brute 0-255
+            var speedPct = node["Speed"]?.GetValue<int?>() ?? 75;
+            var speedRaw = speedPct.HasValue
+                ? (int)Math.Round(speedPct.Value / 100.0 * 255)
+                : 75;
+
             return new LightingSetting
             {
                 Port       = port,
                 Mode       = targetMode,
-                Speed      = node["Speed"]?.GetValue<int?>()      ?? 75,
-                Direction  = node["Direction"]?.GetValue<int?>()  ?? 0,
-                Brightness = node["Brightness"]?.GetValue<int?>() ?? 100,
+                Speed      = speedRaw,
+                Direction  = node["Direction"]?.GetValue<int?>() ?? 0,
+                Brightness = 0,   // L'API attend 0 ; la luminosité est gérée en interne
                 Colors     = ExtractColors(node["Colors"]?.AsArray())
             };
         }
@@ -334,11 +336,18 @@ public sealed class JsonProfileParser : IProfileParser
     private static AioLightingSection ExtractAioSection(JsonNode? node)
     {
         if (node is null) return new AioLightingSection();
+
+        // Speed stocké en % dans le JSON (0-100), l'API attend une valeur brute 0-255
+        var speedPct = node["Speed"]?.GetValue<int?>() ?? 75;
+        var speedRaw = speedPct.HasValue
+            ? (int)Math.Round(speedPct.Value / 100.0 * 255)
+            : 191; // 75% par défaut
+
         return new AioLightingSection
         {
-            Speed      = node["Speed"]?.GetValue<int?>()      ?? 75,
-            Brightness = node["Brightness"]?.GetValue<int?>() ?? 100,
-            Direction  = node["Direction"]?.GetValue<int?>()  ?? 0,
+            Speed      = speedRaw,
+            Brightness = 100,  // ScreenLEDLighting accepte 100 (confirmé par Program.cs)
+            Direction  = node["Direction"]?.GetValue<int?>() ?? 0,
             Colors     = ExtractColors(node["Colors"]?.AsArray())
         };
     }
@@ -356,7 +365,6 @@ public sealed class JsonProfileParser : IProfileParser
 
     /// <summary>
     /// Lit les ScR/ScG/ScB directement depuis le JSON (valeurs stockées par L-Connect).
-    /// Ne recalcule pas via gamma 2.2 pour éviter toute divergence.
     /// </summary>
     private static List<LightingColor> ExtractColors(JsonArray? colorsArray)
     {
