@@ -1,6 +1,6 @@
 {
   "_comment": "Mapping process name (sans .exe, casse ignorée) → nom du profil dans data/profiles/",
-  "default": "profile-cyberpunk-pink",
+  "default": "profile-cyberpunk-yellow",
   "mappings": {
     "acrobat": "profile-red-white",
     "arc": "profile-rainbow-morph",

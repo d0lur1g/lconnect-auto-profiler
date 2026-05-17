@@ -193,6 +193,7 @@ public sealed class JsonProfileParser : IProfileParser
         return Path.GetFullPath(Path.Combine(repoRoot, relativePath));
     }
 
+<<<<<<< HEAD
     /// <summary>
     /// Mappe la valeur Speed stockée dans le JSON L-Connect (index UI : null/0/25/75/100)
     /// vers la valeur de période attendue par l'API (plus petit = plus rapide).
@@ -212,6 +213,8 @@ public sealed class JsonProfileParser : IProfileParser
         _         => jsonSpeed  // valeur inconnue : pass-through
     };
 
+=======
+>>>>>>> parent of d53f819 (fix: Speed — mapping JSON preset (25/75/100) → valeur API (période inversée))
     private LightingSetting ExtractActiveLightingSetting(
         JsonObject allSettings, int targetMode, int port, string label)
     {
@@ -222,16 +225,11 @@ public sealed class JsonProfileParser : IProfileParser
 
             _logger.LogDebug("  [{Label}] mode {Mode} -> '{Key}'", label, targetMode, entry.Key);
 
-            var speedNode  = node["Speed"];
-            int? jsonSpeed = (speedNode is not null && speedNode.GetValueKind() != System.Text.Json.JsonValueKind.Null)
-                             ? speedNode.GetValue<int>()
-                             : null;
-
             return new LightingSetting
             {
                 Port       = port,
                 Mode       = targetMode,
-                Speed      = MapSpeed(jsonSpeed),
+                Speed      = 255, // TEST HARDCODÉ — à supprimer après validation
                 Direction  = node["Direction"] is not null ? node["Direction"]!.GetValue<int>() : 0,
                 Brightness = 0,
                 Colors     = ExtractColors(node["Colors"]?.AsArray())
@@ -404,23 +402,18 @@ public sealed class JsonProfileParser : IProfileParser
 
     /// <summary>
     /// Extrait Speed, Brightness, Direction et Colors depuis un noeud JSON AIO.
-    /// Speed est mappé via MapSpeed (index UI → période API).
-    /// Fallbacks si clé absente ou null : Speed=1 (max), Brightness=100, Direction=0.
+    /// Fallbacks si clé absente ou null : Speed=75, Brightness=100, Direction=0.
     /// </summary>
     private static AioLightingSection ExtractAioSection(JsonNode? node)
     {
-        if (node is null) return new AioLightingSection { Speed = 1, Brightness = 100 };
+        if (node is null) return new AioLightingSection { Speed = 75, Brightness = 100 };
 
         var speedNode      = node["Speed"];
         var brightnessNode = node["Brightness"];
 
-        int? jsonSpeed = (speedNode is not null && speedNode.GetValueKind() != System.Text.Json.JsonValueKind.Null)
-                         ? speedNode.GetValue<int>()
-                         : null;
-
         return new AioLightingSection
         {
-            Speed      = MapSpeed(jsonSpeed) ?? 1,
+            Speed      = (speedNode      is not null && speedNode.GetValueKind()      != System.Text.Json.JsonValueKind.Null) ? speedNode.GetValue<int>()      : 75,
             Brightness = (brightnessNode is not null && brightnessNode.GetValueKind() != System.Text.Json.JsonValueKind.Null) ? brightnessNode.GetValue<int>() : 100,
             Direction  = node["Direction"] is not null ? node["Direction"]!.GetValue<int>() : 0,
             Colors     = ExtractColors(node["Colors"]?.AsArray())
