@@ -1,28 +1,17 @@
-using System.Collections.Generic;
-
 namespace LConnect.AutoProfiler.Application.Services;
 
 /// <summary>
-/// Options de configuration injectées depuis appsettings.json.
-/// Fait correspondre un nom d'exécutable à un nom de profil.
-/// Exemple :
-/// {
-///   "ProfileRules": {
-///     "Mappings": {
-///       "cyberpunk2077.exe": "cyberpunk-pink-blue",
-///       "default":           "girl-boy"
-///     }
-///   }
-/// }
+/// Options lues depuis appsettings.json → section "ProfileRules".
+/// Pointe vers le fichier data/rules/rules.json qui contient
+/// le mapping process → nom de profil.
 /// </summary>
 public sealed class ProfileRuleOptions
 {
     public const string SectionName = "ProfileRules";
 
     /// <summary>
-    /// Clé : nom du processus (ex: "cyberpunk2077.exe") — insensible à la casse.
-    /// Valeur : nom du profil JSON à charger.
-    /// La clé spéciale "default" est appliquée si aucune règle ne correspond.
+    /// Chemin vers le fichier rules.json.
+    /// Relatif au répertoire de travail du service (ex: "data/rules/rules.json").
     /// </summary>
-    public Dictionary<string, string> Mappings { get; set; } = new();
+    public string RulesFile { get; set; } = "data/rules/rules.json";
 }
