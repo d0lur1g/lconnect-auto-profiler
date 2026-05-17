@@ -198,7 +198,7 @@ public sealed class JsonProfileParser : IProfileParser
     /// vers la valeur de période attendue par l'API (plus petit = plus rapide).
     ///
     /// L'UI L-Connect stocke un préréglage de vitesse relative :
-    ///   null / 0  → pas de vitesse (mode statique) → 1 (vitesse max, non utilisée)
+    ///   null / 0  → pas de vitesse (mode statique) → null
     ///   25        → Slow                            → 50
     ///   75        → Medium                          → 20
     ///   100       → Fast                            → 1
@@ -477,17 +477,4 @@ public sealed class JsonProfileParser : IProfileParser
         }
         return result;
     }
-
-    /// <summary>
-    /// Mappe la valeur Speed stockée dans le JSON L-Connect (index UI : null/0/25/75/100)
-    /// vers la valeur de période attendue par l'API (plus petit = plus rapide).
-    /// </summary>
-    private static int? MapSpeed(int? jsonSpeed) => jsonSpeed switch
-    {
-        null or 0 => null,
-        25        => 50,
-        75        => 20,
-        100       => 1,
-        _         => jsonSpeed  // valeur inconnue : pass-through
-    };
 }
