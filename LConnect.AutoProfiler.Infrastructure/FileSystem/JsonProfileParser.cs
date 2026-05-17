@@ -203,10 +203,12 @@ public sealed class JsonProfileParser : IProfileParser
 
             _logger.LogDebug("  [{Label}] mode {Mode} -> '{Key}'", label, targetMode, entry.Key);
 
+            // Speed est nullable : null si le mode ne supporte pas de vitesse (ex: StaticColor).
+            // Valeurs valides : null, 25, 75, 100.
             var speedNode = node["Speed"];
-            var speed     = (speedNode is not null && speedNode.GetValueKind() != System.Text.Json.JsonValueKind.Null)
-                            ? speedNode.GetValue<int>()
-                            : 0;
+            int? speed = (speedNode is not null && speedNode.GetValueKind() != System.Text.Json.JsonValueKind.Null)
+                         ? speedNode.GetValue<int>()
+                         : null;
 
             return new LightingSetting
             {
@@ -385,8 +387,7 @@ public sealed class JsonProfileParser : IProfileParser
 
     /// <summary>
     /// Extrait Speed, Brightness, Direction et Colors depuis un noeud JSON AIO.
-    /// Valeurs lues depuis le JSON du profil actif.
-    /// Fallbacks si la clé est absente ou null : Speed=75, Brightness=100, Direction=0.
+    /// Fallbacks si clé absente ou null : Speed=75, Brightness=100, Direction=0.
     /// </summary>
     private static AioLightingSection ExtractAioSection(JsonNode? node)
     {
@@ -415,6 +416,12 @@ public sealed class JsonProfileParser : IProfileParser
         _                => 1
     };
 
+    /// <summary>
+    /// Extrait la liste des couleurs depuis un tableau JSON.
+    /// Chaque couleur peut avoir 0 à 4 entrées selon le mode d'éclairage
+    /// (ex: StaticColor=1, Breathing=1, Rainbow=0, Disco=4, MeteorRainbow=0, etc.).
+    /// ColorContext est lu depuis le JSON (string ou null).
+    /// </summary>
     private static List<LightingColor> ExtractColors(JsonArray? colorsArray)
     {
         if (colorsArray is null) return new List<LightingColor>();
@@ -429,9 +436,15 @@ public sealed class JsonProfileParser : IProfileParser
             var g = colorNode["G"]?.GetValue<int>() ?? 0;
             var b = colorNode["B"]?.GetValue<int>() ?? 0;
 
+            // ColorContext est une string nullable (ex: "Color1", "Color2", null selon le mode).
+            var colorContextNode = colorNode["ColorContext"];
+            var colorContext = (colorContextNode is not null && colorContextNode.GetValueKind() != System.Text.Json.JsonValueKind.Null)
+                               ? colorContextNode.GetValue<string>()
+                               : null;
+
             result.Add(new LightingColor
             {
-                ColorContext = null,
+                ColorContext = colorContext,
                 A   = a,
                 R   = r,
                 G   = g,

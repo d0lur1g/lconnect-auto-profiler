@@ -1,13 +1,18 @@
-using System.Collections.Generic;
-
 namespace LConnect.AutoProfiler.Core.Models;
 
-public class LightingSetting
+public sealed class LightingSetting
 {
-    public int Port { get; set; }
-    public int Mode { get; set; }
-    public int Speed { get; set; }
-    public int Direction { get; set; }
-    public int Brightness { get; set; }
-    public List<LightingColor> Colors { get; set; } = new();
+    public int  Port       { get; init; }
+    public int  Mode       { get; init; }
+
+    /// <summary>
+    /// Vitesse de l'animation. Null si le mode ne supporte pas de vitesse (ex: StaticColor).
+    /// Valeurs possibles : null, 25, 75, 100.
+    /// </summary>
+    public int? Speed      { get; init; }
+
+    public int  Direction  { get; init; }
+    public int  Brightness { get; init; }
+
+    public List<LightingColor> Colors { get; init; } = new();
 }
