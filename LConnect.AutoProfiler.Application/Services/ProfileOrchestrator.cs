@@ -14,26 +14,26 @@ namespace LConnect.AutoProfiler.Application.Services;
 /// </summary>
 public sealed class ProfileOrchestrator : BackgroundService
 {
-    private readonly IWindowMonitor       _windowMonitor;
-    private readonly IProfileRuleEngine   _ruleEngine;
-    private readonly IProfileParser       _parser;
-    private readonly ILConnectApiClient   _apiClient;
+    private readonly IWindowMonitor _windowMonitor;
+    private readonly IProfileRuleEngine _ruleEngine;
+    private readonly IProfileParser _parser;
+    private readonly ILConnectApiClient _apiClient;
     private readonly ILogger<ProfileOrchestrator> _logger;
 
     private string _lastProcessName = string.Empty;
 
     public ProfileOrchestrator(
-        IWindowMonitor     windowMonitor,
+        IWindowMonitor windowMonitor,
         IProfileRuleEngine ruleEngine,
-        IProfileParser     parser,
+        IProfileParser parser,
         ILConnectApiClient apiClient,
         ILogger<ProfileOrchestrator> logger)
     {
         _windowMonitor = windowMonitor;
-        _ruleEngine    = ruleEngine;
-        _parser        = parser;
-        _apiClient     = apiClient;
-        _logger        = logger;
+        _ruleEngine = ruleEngine;
+        _parser = parser;
+        _apiClient = apiClient;
+        _logger = logger;
     }
 
     protected override Task ExecuteAsync(CancellationToken stoppingToken)
@@ -74,7 +74,7 @@ public sealed class ProfileOrchestrator : BackgroundService
             var profile = await _parser.ParseProfileAsync(profileName);
 
             foreach (var deviceConfig in profile.Devices)
-                await _apiClient.ApplyLightingAsync(deviceConfig);
+                await _apiClient.ApplyAsync(deviceConfig);
         }
         catch (ProfileNotFoundException ex)
         {

@@ -10,15 +10,6 @@ using Microsoft.Extensions.Options;
 
 namespace LConnect.AutoProfiler.Infrastructure.Http;
 
-/// <summary>
-/// Envoie les requêtes POST vers l'API locale L-Connect (127.0.0.1:11021).
-///
-/// Encodage devicePath : Base64(UTF8) puis Uri.EscapeDataString
-/// (identique à ce que fait L-Connect UI, confirmé par capture Fiddler).
-///
-/// Sérialisation JSON : PascalCase (PropertyNamingPolicy = null)
-/// L-Connect attend Port/Mode/Colors/R/G/B en majuscules.
-/// </summary>
 public sealed class LocalLConnectClient : ILConnectApiClient
 {
     private readonly HttpClient _http;
@@ -27,46 +18,65 @@ public sealed class LocalLConnectClient : ILConnectApiClient
 
     private static readonly JsonSerializerOptions JsonOpts = new()
     {
-        PropertyNamingPolicy = null,   // PascalCase
-        WriteIndented        = false
+        PropertyNamingPolicy = null,
+        WriteIndented = false
     };
 
     public LocalLConnectClient(
-        HttpClient                   http,
+        HttpClient http,
         IOptions<LConnectApiOptions> options,
         ILogger<LocalLConnectClient> logger)
     {
-        _http    = http;
+        _http = http;
         _options = options.Value;
-        _logger  = logger;
+        _logger = logger;
     }
 
-    public async Task ApplyLightingAsync(DeviceConfig config)
+    public async Task ApplyAsync(DeviceConfig config)
     {
-        // Encodage : Base64(UTF8(rawHidPath)) puis URL-encode
         var encodedPath = Uri.EscapeDataString(
             Convert.ToBase64String(Encoding.UTF8.GetBytes(config.DevicePath)));
 
-        var url     = $"{_options.BaseUrl}?action=Device&devicePath={encodedPath}&type={config.DeviceType}";
-        var payload = JsonSerializer.Serialize(config.Settings, JsonOpts);
-        var content = new StringContent(payload, Encoding.UTF8, "application/json");
+        var url = $"{_options.BaseUrl}?action=Device&devicePath={encodedPath}&type={config.DeviceType}";
 
-        _logger.LogDebug("POST {Url} -- Payload: {Payload}", url, payload);
+        // Sélection du bon payload selon le type
+        object payload = config.DeviceType switch
+        {
+            "LightingSetting" => (object)(config.Settings
+                ?? throw new InvalidOperationException("Settings requis pour LightingSetting")),
+
+            "ScreenLEDLighting" => config.AioLighting
+                ?? throw new InvalidOperationException("AioLighting requis pour ScreenLEDLighting"),
+
+            "SetFanSpeed" => (object)(config.FanGroups
+                ?? throw new InvalidOperationException("FanGroups requis pour SetFanSpeed")),
+
+            "PumpSpeed" or "FanSpeed" => config.FanCurve
+                ?? throw new InvalidOperationException($"FanCurve requis pour {config.DeviceType}"),
+
+            _ => throw new NotSupportedException($"DeviceType inconnu : {config.DeviceType}")
+        };
+
+        var json = JsonSerializer.Serialize(payload, JsonOpts);
+        var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+        _logger.LogDebug("POST {Url} | Payload: {Payload}", url, json);
 
         try
         {
             var response = await _http.PostAsync(url, content);
 
             if (response.IsSuccessStatusCode)
-                _logger.LogInformation("\u2713 Applied [{Type}] for device '{Path}'",
-                    config.DeviceType, config.DevicePath);
+                _logger.LogInformation("✓ [{Type}] OK — {Path}", config.DeviceType, config.DevicePath);
             else
-                _logger.LogWarning("\u2717 L-Connect returned {Status} for [{Type}] on '{Path}'",
-                    (int)response.StatusCode, config.DeviceType, config.DevicePath);
+                _logger.LogWarning("✗ [{Type}] HTTP {Status} — {Body}",
+                    config.DeviceType,
+                    (int)response.StatusCode,
+                    await response.Content.ReadAsStringAsync());
         }
         catch (HttpRequestException ex)
         {
-            _logger.LogError(ex, "Cannot reach L-Connect service at {Url}. Is it running?", _options.BaseUrl);
+            _logger.LogError(ex, "L-Connect injoignable à {Url}", _options.BaseUrl);
         }
     }
 }
