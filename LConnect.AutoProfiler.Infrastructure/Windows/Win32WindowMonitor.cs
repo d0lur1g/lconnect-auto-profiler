@@ -14,14 +14,14 @@ namespace LConnect.AutoProfiler.Infrastructure.Windows;
 /// </summary>
 public sealed class Win32WindowMonitor : IWindowMonitor, IDisposable
 {
-    // ── Win32 P/Invoke ────────────────────────────────────────────────────
+    // ── Win32 P/Invoke ────────────────────────────────────────────
     [DllImport("user32.dll")]
     private static extern IntPtr GetForegroundWindow();
 
     [DllImport("user32.dll")]
     private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
 
-    // ── Constantes ────────────────────────────────────────────────────
+    // ── Constantes ────────────────────────────────────────────
 
     /// <summary>Fréquence de détection de la fenêtre active.</summary>
     private const int PollIntervalMs = 150;
@@ -32,7 +32,7 @@ public sealed class Win32WindowMonitor : IWindowMonitor, IDisposable
     /// </summary>
     private const int DebounceMs = 200;
 
-    // ── Membres ────────────────────────────────────────────────────
+    // ── Membres ────────────────────────────────────────────
     private readonly ILogger<Win32WindowMonitor> _logger;
     private CancellationTokenSource? _cts;
     private string _lastProcessName  = string.Empty;
@@ -46,7 +46,7 @@ public sealed class Win32WindowMonitor : IWindowMonitor, IDisposable
         _logger = logger;
     }
 
-    // ── API publique ───────────────────────────────────────────────────
+    // ── API publique ────────────────────────────────────────────
     public void StartMonitoring()
     {
         _cts = new CancellationTokenSource();
@@ -64,7 +64,7 @@ public sealed class Win32WindowMonitor : IWindowMonitor, IDisposable
     public string GetCurrentForegroundProcessName()
         => ResolveProcessName(GetForegroundWindow());
 
-    // ── Boucle interne ──────────────────────────────────────────────────
+    // ── Boucle interne ────────────────────────────────────────────
     private async Task PollLoop(CancellationToken token)
     {
         while (!token.IsCancellationRequested)
@@ -108,6 +108,11 @@ public sealed class Win32WindowMonitor : IWindowMonitor, IDisposable
         }
     }
 
+    /// <summary>
+    /// Retourne le nom du processus sans extension (.exe retiré),
+    /// en minuscules, pour correspondre aux clés de rules.json.
+    /// Ex: "chrome.exe" → "chrome", "PotPlayerMini64.exe" → "potplayermini64"
+    /// </summary>
     private static string ResolveProcessName(IntPtr hWnd)
     {
         if (hWnd == IntPtr.Zero) return string.Empty;
@@ -117,7 +122,7 @@ public sealed class Win32WindowMonitor : IWindowMonitor, IDisposable
         try
         {
             using var proc = Process.GetProcessById((int)pid);
-            return proc.ProcessName + ".exe";
+            return proc.ProcessName.ToLowerInvariant();
         }
         catch
         {
