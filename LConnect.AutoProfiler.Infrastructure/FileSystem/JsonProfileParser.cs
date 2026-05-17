@@ -193,6 +193,25 @@ public sealed class JsonProfileParser : IProfileParser
         return Path.GetFullPath(Path.Combine(repoRoot, relativePath));
     }
 
+    /// <summary>
+    /// Mappe la valeur Speed stockée dans le JSON L-Connect (index UI : null/0/25/75/100)
+    /// vers la valeur de période attendue par l'API (plus petit = plus rapide).
+    ///
+    /// L'UI L-Connect stocke un préréglage de vitesse relative :
+    ///   null / 0  → pas de vitesse (mode statique) → 1 (vitesse max, non utilisée)
+    ///   25        → Slow                            → 50
+    ///   75        → Medium                          → 20
+    ///   100       → Fast                            → 1
+    /// </summary>
+    private static int? MapSpeed(int? jsonSpeed) => jsonSpeed switch
+    {
+        null or 0 => null,
+        25        => 50,
+        75        => 20,
+        100       => 1,
+        _         => jsonSpeed  // valeur inconnue : pass-through
+    };
+
     private LightingSetting ExtractActiveLightingSetting(
         JsonObject allSettings, int targetMode, int port, string label)
     {
@@ -203,11 +222,16 @@ public sealed class JsonProfileParser : IProfileParser
 
             _logger.LogDebug("  [{Label}] mode {Mode} -> '{Key}'", label, targetMode, entry.Key);
 
+            var speedNode  = node["Speed"];
+            int? jsonSpeed = (speedNode is not null && speedNode.GetValueKind() != System.Text.Json.JsonValueKind.Null)
+                             ? speedNode.GetValue<int>()
+                             : null;
+
             return new LightingSetting
             {
                 Port       = port,
                 Mode       = targetMode,
-                Speed      = 255, // TEST HARDCODÉ — à supprimer après validation
+                Speed      = MapSpeed(jsonSpeed),
                 Direction  = node["Direction"] is not null ? node["Direction"]!.GetValue<int>() : 0,
                 Brightness = 0,
                 Colors     = ExtractColors(node["Colors"]?.AsArray())
@@ -380,18 +404,23 @@ public sealed class JsonProfileParser : IProfileParser
 
     /// <summary>
     /// Extrait Speed, Brightness, Direction et Colors depuis un noeud JSON AIO.
-    /// Fallbacks si clé absente ou null : Speed=75, Brightness=100, Direction=0.
+    /// Speed est mappé via MapSpeed (index UI → période API).
+    /// Fallbacks si clé absente ou null : Speed=1 (max), Brightness=100, Direction=0.
     /// </summary>
     private static AioLightingSection ExtractAioSection(JsonNode? node)
     {
-        if (node is null) return new AioLightingSection { Speed = 75, Brightness = 100 };
+        if (node is null) return new AioLightingSection { Speed = 1, Brightness = 100 };
 
         var speedNode      = node["Speed"];
         var brightnessNode = node["Brightness"];
 
+        int? jsonSpeed = (speedNode is not null && speedNode.GetValueKind() != System.Text.Json.JsonValueKind.Null)
+                         ? speedNode.GetValue<int>()
+                         : null;
+
         return new AioLightingSection
         {
-            Speed      = (speedNode      is not null && speedNode.GetValueKind()      != System.Text.Json.JsonValueKind.Null) ? speedNode.GetValue<int>()      : 75,
+            Speed      = MapSpeed(jsonSpeed) ?? 1,
             Brightness = (brightnessNode is not null && brightnessNode.GetValueKind() != System.Text.Json.JsonValueKind.Null) ? brightnessNode.GetValue<int>() : 100,
             Direction  = node["Direction"] is not null ? node["Direction"]!.GetValue<int>() : 0,
             Colors     = ExtractColors(node["Colors"]?.AsArray())
@@ -448,4 +477,17 @@ public sealed class JsonProfileParser : IProfileParser
         }
         return result;
     }
+
+    /// <summary>
+    /// Mappe la valeur Speed stockée dans le JSON L-Connect (index UI : null/0/25/75/100)
+    /// vers la valeur de période attendue par l'API (plus petit = plus rapide).
+    /// </summary>
+    private static int? MapSpeed(int? jsonSpeed) => jsonSpeed switch
+    {
+        null or 0 => null,
+        25        => 50,
+        75        => 20,
+        100       => 1,
+        _         => jsonSpeed  // valeur inconnue : pass-through
+    };
 }
