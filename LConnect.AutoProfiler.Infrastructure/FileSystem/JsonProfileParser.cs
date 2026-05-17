@@ -190,8 +190,11 @@ public sealed class JsonProfileParser : IProfileParser
         return Path.GetFullPath(Path.Combine(repoRoot, relativePath));
     }
 
-    /// <summary>Convertit un pourcentage 0-100 en valeur brute 0-255 attendue par l'API.</summary>
-    private static int PctToRaw(int pct) => (int)Math.Round(pct / 100.0 * 255);
+    /// <summary>
+    /// LightingSetting : Speed stocké en % (0-100) dans le JSON,
+    /// mais l’API GA II attend une valeur brute 0-255.
+    /// </summary>
+    private static int PctToRaw255(int pct) => (int)Math.Round(pct / 100.0 * 255);
 
     private LightingSetting ExtractActiveLightingSetting(
         JsonObject allSettings, int targetMode, int port, string label)
@@ -203,16 +206,15 @@ public sealed class JsonProfileParser : IProfileParser
 
             _logger.LogDebug("  [{Label}] mode {Mode} -> '{Key}'", label, targetMode, entry.Key);
 
-            // Speed stocké en % (0-100) dans le JSON, l'API attend 0-255
             var speedPct = node["Speed"] is not null ? node["Speed"]!.GetValue<int>() : 75;
 
             return new LightingSetting
             {
                 Port       = port,
                 Mode       = targetMode,
-                Speed      = PctToRaw(speedPct),
+                Speed      = PctToRaw255(speedPct),  // 0-255 attendu par l’API GA II
                 Direction  = node["Direction"] is not null ? node["Direction"]!.GetValue<int>() : 0,
-                Brightness = 0,   // L'API GA II attend 0 ; luminosité gérée en interne
+                Brightness = 0,   // L’API GA II attend 0
                 Colors     = ExtractColors(node["Colors"]?.AsArray())
             };
         }
@@ -337,19 +339,17 @@ public sealed class JsonProfileParser : IProfileParser
     {
         if (node is null) return new AioLightingSection();
 
-        // Speed stocké en % (0-100) dans le JSON, l'API attend 0-255
-        var speedPct = node["Speed"] is not null ? node["Speed"]!.GetValue<int>() : 75;
+        // ScreenLEDLighting : Speed en % 0-100, pas de conversion (confirmé par Program.cs)
+        var speed = node["Speed"] is not null ? node["Speed"]!.GetValue<int>() : 75;
 
         return new AioLightingSection
         {
-            Speed      = PctToRaw(speedPct),
-            Brightness = 100,  // ScreenLEDLighting accepte 100 (confirmé par Program.cs)
+            Speed      = speed,
+            Brightness = 100,
             Direction  = node["Direction"] is not null ? node["Direction"]!.GetValue<int>() : 0,
             Colors     = ExtractColors(node["Colors"]?.AsArray())
         };
     }
-
-    private static int PctToRaw(int pct) => (int)Math.Round(pct / 100.0 * 255);
 
     private static int ResolveSensorType(string key) => key switch
     {
