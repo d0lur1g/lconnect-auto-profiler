@@ -13,24 +13,32 @@ using Microsoft.Extensions.Options;
 
 namespace LConnect.AutoProfiler.Infrastructure.FileSystem;
 
-/// <summary>
-/// Lit un fichier JSON décodé L-Connect et extrait UNIQUEMENT
+/// &lt;summary&gt;
+/// Lit un fichier JSON fully_decoded L-Connect et extrait UNIQUEMENT
 /// les paramètres du mode actif (LightingMode, Inner, Outer, couleurs, vitesse).
-/// </summary>
+///
+/// Structure attendue :
+///   root.Datas[i].Metadata          → DevicePath (chemin HID)
+///   root.Datas[i].Data.SubProfiles[] → groupes (GA II, BOTTOM, BACK, Port4…)
+///     SubProfiles[j].LightingMode        → mode global actif
+///     SubProfiles[j].LightingModeInner   → mode inner actif
+///     SubProfiles[j].LightingModeOuter   → mode outer actif
+///     SubProfiles[j].LightingSettings    → tous les effets disponibles
+/// &lt;/summary&gt;
 public sealed class JsonProfileParser : IProfileParser
 {
     private readonly ProfileParserOptions _options;
-    private readonly ILogger<JsonProfileParser> _logger;
+    private readonly ILogger&lt;JsonProfileParser&gt; _logger;
 
     public JsonProfileParser(
-        IOptions<ProfileParserOptions> options,
-        ILogger<JsonProfileParser> logger)
+        IOptions&lt;ProfileParserOptions&gt; options,
+        ILogger&lt;JsonProfileParser&gt; logger)
     {
         _options = options.Value;
         _logger  = logger;
     }
 
-    public async Task<LightingProfile> ParseProfileAsync(string profileName)
+    public async Task&lt;LightingProfile&gt; ParseProfileAsync(string profileName)
     {
         var filePath = Path.Combine(_options.ProfilesDirectory, $"{profileName}.json");
 
@@ -41,47 +49,58 @@ public sealed class JsonProfileParser : IProfileParser
         var root    = JsonNode.Parse(json) ?? throw new InvalidDataException("Invalid JSON.");
         var profile = new LightingProfile { ProfileName = profileName };
 
-        // Parcourt les groupes de contrôleurs (GA II, BOTTOM, BACK, Port4…)
-        var groupsNode = root["FanGroups"]?.AsArray()
-                      ?? root["LightingGroups"]?.AsArray()
-                      ?? new JsonArray();
+        // Parcourt les entrées de contrôleurs (un par device USB HID)
+        var datasNode = root["Datas"]?.AsArray() ?? new JsonArray();
 
-        foreach (var groupNode in groupsNode)
+        foreach (var dataEntry in datasNode)
         {
-            if (groupNode is null) continue;
+            if (dataEntry is null) continue;
 
-            var devicePath  = groupNode["DevicePath"]?.GetValue<string>() ?? string.Empty;
-            var deviceType  = groupNode["DeviceType"]?.GetValue<string>() ?? "LightingSetting";
-            var activeMode  = groupNode["LightingMode"]?.GetValue<int>() ?? 0;
-            var activeInner = groupNode["LightingModeInner"]?.GetValue<int>() ?? 0;
-            var activeOuter = groupNode["LightingModeOuter"]?.GetValue<int>() ?? 0;
+            // Le DevicePath est le chemin HID unique du contrôleur
+            var devicePath = dataEntry["Metadata"]?.GetValue&lt;string&gt;() ?? string.Empty;
 
-            _logger.LogDebug("Parsing group '{DevicePath}': Mode={Mode}, Inner={Inner}, Outer={Outer}",
-                devicePath, activeMode, activeInner, activeOuter);
+            var subProfiles = dataEntry["Data"]?["SubProfiles"]?.AsArray();
+            if (subProfiles is null) continue;
 
-            var allSettings = groupNode["LightingSettings"]?.AsObject();
-            if (allSettings is null) continue;
-
-            var deviceConfig = new DeviceConfig
+            // Parcourt les groupes de fans de ce contrôleur (GA II, BOTTOM, BACK, Port4…)
+            foreach (var groupNode in subProfiles)
             {
-                DevicePath = devicePath,
-                DeviceType = deviceType,
-                Settings   = new List<LightingSetting>()
-            };
+                if (groupNode is null) continue;
 
-            // Extraction du mode Global actif
-            deviceConfig.Settings.Add(
-                ExtractActiveSetting(allSettings, activeMode, port: 0, label: "Global"));
+                var groupName   = groupNode["GroupName"]?.GetValue&lt;string&gt;() ?? string.Empty;
+                var activeMode  = groupNode["LightingMode"]?.GetValue&lt;int&gt;()      ?? 0;
+                var activeInner = groupNode["LightingModeInner"]?.GetValue&lt;int&gt;() ?? 0;
+                var activeOuter = groupNode["LightingModeOuter"]?.GetValue&lt;int&gt;() ?? 0;
 
-            // Extraction du mode Inner actif
-            deviceConfig.Settings.Add(
-                ExtractActiveSetting(allSettings, activeInner, port: 1, label: "Inner"));
+                _logger.LogDebug(
+                    "Parsing group '{Group}' on device '{Device}': Mode={Mode}, Inner={Inner}, Outer={Outer}",
+                    groupName, devicePath, activeMode, activeInner, activeOuter);
 
-            // Extraction du mode Outer actif
-            deviceConfig.Settings.Add(
-                ExtractActiveSetting(allSettings, activeOuter, port: 2, label: "Outer"));
+                var allSettings = groupNode["LightingSettings"]?.AsObject();
+                if (allSettings is null) continue;
 
-            profile.Devices.Add(deviceConfig);
+                var deviceConfig = new DeviceConfig
+                {
+                    // DevicePath = chemin HID + nom du groupe pour unicité
+                    DevicePath = $"{devicePath}::{groupName}",
+                    DeviceType = "LightingSetting",
+                    Settings   = new List&lt;LightingSetting&gt;()
+                };
+
+                // Extraction du mode Global actif
+                deviceConfig.Settings.Add(
+                    ExtractActiveSetting(allSettings, activeMode, port: 0, label: "Global"));
+
+                // Extraction du mode Inner actif
+                deviceConfig.Settings.Add(
+                    ExtractActiveSetting(allSettings, activeInner, port: 1, label: "Inner"));
+
+                // Extraction du mode Outer actif
+                deviceConfig.Settings.Add(
+                    ExtractActiveSetting(allSettings, activeOuter, port: 2, label: "Outer"));
+
+                profile.Devices.Add(deviceConfig);
+            }
         }
 
         _logger.LogInformation("Profile '{Name}' parsed: {DeviceCount} device(s).",
@@ -95,11 +114,11 @@ public sealed class JsonProfileParser : IProfileParser
     private LightingSetting ExtractActiveSetting(
         JsonObject allSettings, int targetMode, int port, string label)
     {
-        // Cherche dans les clés du noeud LightingSettings l'entrée dont "Mode" == targetMode
+        // Cherche dans LightingSettings l'entrée dont "Mode" == targetMode
         foreach (var entry in allSettings)
         {
             var node = entry.Value;
-            if (node?["Mode"]?.GetValue<int>() != targetMode) continue;
+            if (node?["Mode"]?.GetValue&lt;int&gt;() != targetMode) continue;
 
             _logger.LogDebug("  [{Label}] Found mode {Mode} → key '{Key}'", label, targetMode, entry.Key);
 
@@ -107,9 +126,9 @@ public sealed class JsonProfileParser : IProfileParser
             {
                 Port       = port,
                 Mode       = targetMode,
-                Speed      = node["Speed"]?.GetValue<int>() ?? 75,
-                Direction  = node["Direction"]?.GetValue<int>() ?? 0,
-                Brightness = node["Brightness"]?.GetValue<int>() ?? 100,
+                Speed      = node["Speed"]?.GetValue&lt;int&gt;()      ?? 75,
+                Direction  = node["Direction"]?.GetValue&lt;int&gt;()  ?? 0,
+                Brightness = node["Brightness"]?.GetValue&lt;int&gt;() ?? 100,
                 Colors     = ExtractColors(node["Colors"]?.AsArray())
             };
         }
@@ -118,22 +137,22 @@ public sealed class JsonProfileParser : IProfileParser
         return new LightingSetting { Port = port, Mode = targetMode };
     }
 
-    private static List<LightingColor> ExtractColors(JsonArray? colorsArray)
+    private static List&lt;LightingColor&gt; ExtractColors(JsonArray? colorsArray)
     {
-        if (colorsArray is null) return new List<LightingColor>();
+        if (colorsArray is null) return new List&lt;LightingColor&gt;();
 
-        var result = new List<LightingColor>();
+        var result = new List&lt;LightingColor&gt;();
         foreach (var colorNode in colorsArray)
         {
             if (colorNode is null) continue;
             result.Add(new LightingColor
             {
-                R   = colorNode["R"]?.GetValue<int>()    ?? 0,
-                G   = colorNode["G"]?.GetValue<int>()    ?? 0,
-                B   = colorNode["B"]?.GetValue<int>()    ?? 0,
-                ScR = colorNode["ScR"]?.GetValue<double>() ?? 0,
-                ScG = colorNode["ScG"]?.GetValue<double>() ?? 0,
-                ScB = colorNode["ScB"]?.GetValue<double>() ?? 0,
+                R   = colorNode["R"]?.GetValue&lt;int&gt;()    ?? 0,
+                G   = colorNode["G"]?.GetValue&lt;int&gt;()    ?? 0,
+                B   = colorNode["B"]?.GetValue&lt;int&gt;()    ?? 0,
+                ScR = colorNode["ScR"]?.GetValue&lt;double&gt;() ?? 0,
+                ScG = colorNode["ScG"]?.GetValue&lt;double&gt;() ?? 0,
+                ScB = colorNode["ScB"]?.GetValue&lt;double&gt;() ?? 0,
             });
         }
         return result;
