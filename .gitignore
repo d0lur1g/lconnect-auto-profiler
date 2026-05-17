@@ -24,7 +24,7 @@ Thumbs.db
 
 # Données runtime — profils L-Connect (fichiers volumineux et personnels)
 # Copier manuellement depuis E:\SOFTWARE\00_PROFILES_ALL\Lian Li - L-Connect 3\00_PROFILES
-data/profiles/*.json
+# data/profiles/*.json
 
 # Les règles et overrides sont versionnées (config métier)
 !data/rules/
