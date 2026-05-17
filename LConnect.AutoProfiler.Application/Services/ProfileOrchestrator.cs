@@ -38,19 +38,26 @@ public sealed class ProfileOrchestrator : BackgroundService
         _logger        = logger;
     }
 
-    protected override Task ExecuteAsync(CancellationToken stoppingToken)
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         _windowMonitor.OnForegroundProcessChanged += OnForegroundProcessChanged;
         _windowMonitor.StartMonitoring();
 
         _logger.LogInformation("ProfileOrchestrator started — watching foreground window…");
 
-        return Task.Delay(Timeout.Infinite, stoppingToken)
-                   .ContinueWith(_ =>
-                   {
-                       _windowMonitor.StopMonitoring();
-                       _logger.LogInformation("ProfileOrchestrator stopped.");
-                   }, TaskScheduler.Default);
+        // Appliquer immédiatement le profil correspondant à la fenêtre déjà active
+        var current = _windowMonitor.GetCurrentForegroundProcessName();
+        if (!string.IsNullOrEmpty(current))
+            await ApplyProfileForProcessAsync(current);
+        else
+            await ApplyProfileForProcessAsync(string.Empty); // déclenchera le default
+
+        await Task.Delay(Timeout.Infinite, stoppingToken)
+                  .ContinueWith(_ =>
+                  {
+                      _windowMonitor.StopMonitoring();
+                      _logger.LogInformation("ProfileOrchestrator stopped.");
+                  }, TaskScheduler.Default);
     }
 
     private async void OnForegroundProcessChanged(object? sender, string processName)
@@ -61,20 +68,28 @@ public sealed class ProfileOrchestrator : BackgroundService
         _lastProcessName = processName;
         _logger.LogDebug("Foreground process changed → {Process}", processName);
 
+        await ApplyProfileForProcessAsync(processName);
+    }
+
+    /// <summary>
+    /// Détermine et applique le profil pour un nom de processus donné.
+    /// Si le processus est vide ou inconnu, le profil par défaut est utilisé.
+    /// </summary>
+    private async Task ApplyProfileForProcessAsync(string processName)
+    {
         try
         {
             var profileName = _ruleEngine.GetProfileNameForProcess(processName);
 
             if (string.IsNullOrEmpty(profileName))
             {
-                _logger.LogWarning("No profile mapped for process: {Process}", processName);
+                _logger.LogWarning("No profile mapped for process '{Process}' and no default defined.", processName);
                 return;
             }
 
             _logger.LogInformation("Applying profile '{Profile}' for '{Process}'", profileName, processName);
 
             var profile = await _parser.ParseProfileAsync(profileName);
-
             await ApplyProfileAsync(profile);
         }
         catch (ProfileNotFoundException ex)
