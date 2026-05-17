@@ -1,6 +1,6 @@
 {
   "_comment": "Mapping process name (sans .exe, casse ignorée) → nom du profil dans data/profiles/",
-  "default": "profile-cyberpunk-yellow",
+  "default": "profile-cyberpunk-pink",
   "mappings": {
     "acrobat": "profile-red-white",
     "arc": "profile-rainbow-morph",
@@ -18,7 +18,7 @@
     "l-connect 3": "profile-rainbow-morph",
     "lightroom": "profile-blue-light",
     "mmc": "profile-cyberpunk-yellow",
-    "notepad": "profile-blue-light",
+    "notepad": "profile-cyberpunk-pink",
     "notion": "profile-yellow-purple",
     "openconsole": "profile-matrix",
     "perplexity": "cyberpunk",
