@@ -190,6 +190,9 @@ public sealed class JsonProfileParser : IProfileParser
         return Path.GetFullPath(Path.Combine(repoRoot, relativePath));
     }
 
+    /// <summary>Convertit un pourcentage 0-100 en valeur brute 0-255 attendue par l'API.</summary>
+    private static int PctToRaw(int pct) => (int)Math.Round(pct / 100.0 * 255);
+
     private LightingSetting ExtractActiveLightingSetting(
         JsonObject allSettings, int targetMode, int port, string label)
     {
@@ -200,19 +203,16 @@ public sealed class JsonProfileParser : IProfileParser
 
             _logger.LogDebug("  [{Label}] mode {Mode} -> '{Key}'", label, targetMode, entry.Key);
 
-            // Speed stocké en % dans le JSON (0-100), l'API attend une valeur brute 0-255
-            var speedPct = node["Speed"]?.GetValue<int?>() ?? 75;
-            var speedRaw = speedPct.HasValue
-                ? (int)Math.Round(speedPct.Value / 100.0 * 255)
-                : 75;
+            // Speed stocké en % (0-100) dans le JSON, l'API attend 0-255
+            var speedPct = node["Speed"] is not null ? node["Speed"]!.GetValue<int>() : 75;
 
             return new LightingSetting
             {
                 Port       = port,
                 Mode       = targetMode,
-                Speed      = speedRaw,
-                Direction  = node["Direction"]?.GetValue<int?>() ?? 0,
-                Brightness = 0,   // L'API attend 0 ; la luminosité est gérée en interne
+                Speed      = PctToRaw(speedPct),
+                Direction  = node["Direction"] is not null ? node["Direction"]!.GetValue<int>() : 0,
+                Brightness = 0,   // L'API GA II attend 0 ; luminosité gérée en interne
                 Colors     = ExtractColors(node["Colors"]?.AsArray())
             };
         }
@@ -337,20 +337,19 @@ public sealed class JsonProfileParser : IProfileParser
     {
         if (node is null) return new AioLightingSection();
 
-        // Speed stocké en % dans le JSON (0-100), l'API attend une valeur brute 0-255
-        var speedPct = node["Speed"]?.GetValue<int?>() ?? 75;
-        var speedRaw = speedPct.HasValue
-            ? (int)Math.Round(speedPct.Value / 100.0 * 255)
-            : 191; // 75% par défaut
+        // Speed stocké en % (0-100) dans le JSON, l'API attend 0-255
+        var speedPct = node["Speed"] is not null ? node["Speed"]!.GetValue<int>() : 75;
 
         return new AioLightingSection
         {
-            Speed      = speedRaw,
+            Speed      = PctToRaw(speedPct),
             Brightness = 100,  // ScreenLEDLighting accepte 100 (confirmé par Program.cs)
-            Direction  = node["Direction"]?.GetValue<int?>() ?? 0,
+            Direction  = node["Direction"] is not null ? node["Direction"]!.GetValue<int>() : 0,
             Colors     = ExtractColors(node["Colors"]?.AsArray())
         };
     }
+
+    private static int PctToRaw(int pct) => (int)Math.Round(pct / 100.0 * 255);
 
     private static int ResolveSensorType(string key) => key switch
     {
