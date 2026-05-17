@@ -18,36 +18,37 @@ namespace LConnect.AutoProfiler.Infrastructure.FileSystem;
 /// Lit un fichier JSON fully_decoded L-Connect et extrait UNIQUEMENT
 /// les paramètres du mode actif (LightingMode, Inner, Outer, couleurs, vitesse).
 ///
-/// Le chemin ProfilesDirectory est résolu relativement à la racine du repo
-/// (ContentRootPath = Host/, donc on remonte d'un niveau).
-/// En production (service installé), ContentRootPath = dossier d'installation.
-/// </summary>
+/// Structure attendue :
+///   root.Datas[i].Metadata          → DevicePath (chemin HID)
+///   root.Datas[i].Data.SubProfiles[] → groupes (GA II, BOTTOM, BACK, Port4…)
+///     SubProfiles[j].LightingMode        → mode global actif
+///     SubProfiles[j].LightingModeInner   → mode inner actif
+///     SubProfiles[j].LightingModeOuter   → mode outer actif
+///     SubProfiles[j].LightingSettings    → tous les effets disponibles
+/// &lt;/summary&gt;
 public sealed class JsonProfileParser : IProfileParser
 {
     private readonly ProfileParserOptions _options;
-    private readonly IHostEnvironment _env;
-    private readonly ILogger<JsonProfileParser> _logger;
+    private readonly ILogger&lt;JsonProfileParser&gt; _logger;
 
     public JsonProfileParser(
-        IOptions<ProfileParserOptions> options,
-        IHostEnvironment env,
-        ILogger<JsonProfileParser> logger)
+        IOptions&lt; ProfileParserOptions&gt; options,
+        ILogger&lt;JsonProfileParser&gt; logger)
     {
         _options = options.Value;
-        _env     = env;
         _logger  = logger;
     }
 
     public async Task<LightingProfile> ParseProfileAsync(string profileName)
     {
-        var dir      = ResolvePath(_options.ProfilesDirectory);
+        var dir = ResolvePath(_options.ProfilesDirectory);
         var filePath = Path.Combine(dir, $"{profileName}.json");
 
         if (!File.Exists(filePath))
             throw new ProfileNotFoundException(profileName);
 
-        var json    = await File.ReadAllTextAsync(filePath);
-        var root    = JsonNode.Parse(json) ?? throw new InvalidDataException("Invalid JSON.");
+        var json = await File.ReadAllTextAsync(filePath);
+        var root = JsonNode.Parse(json) ?? throw new InvalidDataException("Invalid JSON.");
         var profile = new LightingProfile { ProfileName = profileName };
 
         var datasNode = root["Datas"]?.AsArray() ?? new JsonArray();
@@ -56,7 +57,9 @@ public sealed class JsonProfileParser : IProfileParser
         {
             if (dataEntry is null) continue;
 
-            var devicePath  = dataEntry["Metadata"]?.GetValue<string>() ?? string.Empty;
+            // Le DevicePath est le chemin HID unique du contrôleur
+            var devicePath = dataEntry["Metadata"]?.GetValue & lt; string&gt; () ?? string.Empty;
+
             var subProfiles = dataEntry["Data"]?["SubProfiles"]?.AsArray();
             if (subProfiles is null) continue;
 
@@ -64,10 +67,10 @@ public sealed class JsonProfileParser : IProfileParser
             {
                 if (groupNode is null) continue;
 
-                var groupName   = groupNode["GroupName"]?.GetValue<string>() ?? string.Empty;
-                var activeMode  = groupNode["LightingMode"]?.GetValue<int>()      ?? 0;
-                var activeInner = groupNode["LightingModeInner"]?.GetValue<int>() ?? 0;
-                var activeOuter = groupNode["LightingModeOuter"]?.GetValue<int>() ?? 0;
+                var groupName = groupNode["GroupName"]?.GetValue & lt; string&gt; () ?? string.Empty;
+                var activeMode = groupNode["LightingMode"]?.GetValue & lt; int&gt; () ?? 0;
+                var activeInner = groupNode["LightingModeInner"]?.GetValue & lt; int&gt; () ?? 0;
+                var activeOuter = groupNode["LightingModeOuter"]?.GetValue & lt; int&gt; () ?? 0;
 
                 _logger.LogDebug(
                     "Parsing group '{Group}' on device '{Device}': Mode={Mode}, Inner={Inner}, Outer={Outer}",
@@ -80,12 +83,20 @@ public sealed class JsonProfileParser : IProfileParser
                 {
                     DevicePath = $"{devicePath}::{groupName}",
                     DeviceType = "LightingSetting",
-                    Settings   = new List<LightingSetting>()
+                    Settings = new List& lt; LightingSetting & gt; ()
                 };
 
-                deviceConfig.Settings.Add(ExtractActiveSetting(allSettings, activeMode,  port: 0, label: "Global"));
-                deviceConfig.Settings.Add(ExtractActiveSetting(allSettings, activeInner, port: 1, label: "Inner"));
-                deviceConfig.Settings.Add(ExtractActiveSetting(allSettings, activeOuter, port: 2, label: "Outer"));
+                // Extraction du mode Global actif
+                deviceConfig.Settings.Add(
+                    ExtractActiveSetting(allSettings, activeMode, port: 0, label: "Global"));
+
+                // Extraction du mode Inner actif
+                deviceConfig.Settings.Add(
+                    ExtractActiveSetting(allSettings, activeInner, port: 1, label: "Inner"));
+
+                // Extraction du mode Outer actif
+                deviceConfig.Settings.Add(
+                    ExtractActiveSetting(allSettings, activeOuter, port: 2, label: "Outer"));
 
                 profile.Devices.Add(deviceConfig);
             }
@@ -97,16 +108,7 @@ public sealed class JsonProfileParser : IProfileParser
         return profile;
     }
 
-    // -- Helpers --------------------------------------------------------------
-
-    private string ResolvePath(string relativePath)
-    {
-        if (Path.IsPathRooted(relativePath))
-            return relativePath;
-
-        var repoRoot = Path.GetFullPath(Path.Combine(_env.ContentRootPath, ".."));
-        return Path.GetFullPath(Path.Combine(repoRoot, relativePath));
-    }
+    // ── Helpers ──────────────────────────────────────────────────────────────
 
     private LightingSetting ExtractActiveSetting(
         JsonObject allSettings, int targetMode, int port, string label)
@@ -120,16 +122,16 @@ public sealed class JsonProfileParser : IProfileParser
 
             return new LightingSetting
             {
-                Port       = port,
-                Mode       = targetMode,
-                Speed      = node["Speed"]?.GetValue<int>()      ?? 75,
-                Direction  = node["Direction"]?.GetValue<int>()  ?? 0,
-                Brightness = node["Brightness"]?.GetValue<int>() ?? 100,
-                Colors     = ExtractColors(node["Colors"]?.AsArray())
+                Port = port,
+                Mode = targetMode,
+                Speed = node["Speed"]?.GetValue & lt; int & gt; () ?? 75,
+                Direction = node["Direction"]?.GetValue & lt; int & gt; () ?? 0,
+                Brightness = node["Brightness"]?.GetValue & lt; int & gt; () ?? 100,
+                Colors = ExtractColors(node["Colors"]?.AsArray())
             };
         }
 
-        _logger.LogWarning("  [{Label}] Mode {Mode} not found in LightingSettings -- using defaults.", label, targetMode);
+        _logger.LogWarning("  [{Label}] Mode {Mode} not found in LightingSettings — using defaults.", label, targetMode);
         return new LightingSetting { Port = port, Mode = targetMode };
     }
 
@@ -143,12 +145,12 @@ public sealed class JsonProfileParser : IProfileParser
             if (colorNode is null) continue;
             result.Add(new LightingColor
             {
-                R   = colorNode["R"]?.GetValue<int>()      ?? 0,
-                G   = colorNode["G"]?.GetValue<int>()      ?? 0,
-                B   = colorNode["B"]?.GetValue<int>()      ?? 0,
-                ScR = colorNode["ScR"]?.GetValue<double>() ?? 0,
-                ScG = colorNode["ScG"]?.GetValue<double>() ?? 0,
-                ScB = colorNode["ScB"]?.GetValue<double>() ?? 0,
+                R = colorNode["R"]?.GetValue & lt; int & gt; () ?? 0,
+                G = colorNode["G"]?.GetValue & lt; int & gt; () ?? 0,
+                B = colorNode["B"]?.GetValue & lt; int & gt; () ?? 0,
+                ScR = colorNode["ScR"]?.GetValue & lt; double & gt; () ?? 0,
+                ScG = colorNode["ScG"]?.GetValue & lt; double & gt; () ?? 0,
+                ScB = colorNode["ScB"]?.GetValue & lt; double & gt; () ?? 0,
             });
         }
         return result;
