@@ -21,24 +21,28 @@ public sealed class LocalLConnectClient : ILConnectApiClient
 
     private static readonly JsonSerializerOptions JsonOpts = new()
     {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        WriteIndented        = false
+        PropertyNamingPolicy = null,
+        WriteIndented = false
     };
 
     public LocalLConnectClient(
-        HttpClient                       http,
-        IOptions<LConnectApiOptions>     options,
-        ILogger<LocalLConnectClient>     logger)
+        HttpClient http,
+        IOptions<LConnectApiOptions> options,
+        ILogger<LocalLConnectClient> logger)
     {
-        _http    = http;
+        _http = http;
         _options = options.Value;
-        _logger  = logger;
+        _logger = logger;
     }
 
     public async Task ApplyLightingAsync(DeviceConfig config)
     {
         // URL : http://127.0.0.1:11021/?action=Device&devicePath={encodé}&type={type}
-        var encodedPath = Uri.EscapeDataString(config.DevicePath);
+        var rawHidPath = config.DevicePath.Contains("::")
+    ? config.DevicePath[..config.DevicePath.IndexOf("::", StringComparison.Ordinal)]
+    : config.DevicePath;
+        var encodedPath = Uri.EscapeDataString(
+    Convert.ToBase64String(Encoding.UTF8.GetBytes(rawHidPath)));
         var url = $"{_options.BaseUrl}?action=Device&devicePath={encodedPath}&type={config.DeviceType}";
 
         var payload = JsonSerializer.Serialize(config.Settings, JsonOpts);
