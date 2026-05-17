@@ -1,7 +1,8 @@
 using System;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using LConnect.AutoProfiler.Application.Exceptions;   // ← ajout du using manquant
+using LConnect.AutoProfiler.Application.Exceptions;
 using LConnect.AutoProfiler.Core.Interfaces;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -30,10 +31,10 @@ public sealed class ProfileOrchestrator : BackgroundService
         ILogger<ProfileOrchestrator> logger)
     {
         _windowMonitor = windowMonitor;
-        _ruleEngine = ruleEngine;
-        _parser = parser;
-        _apiClient = apiClient;
-        _logger = logger;
+        _ruleEngine    = ruleEngine;
+        _parser        = parser;
+        _apiClient     = apiClient;
+        _logger        = logger;
     }
 
     protected override Task ExecuteAsync(CancellationToken stoppingToken)
@@ -73,8 +74,12 @@ public sealed class ProfileOrchestrator : BackgroundService
 
             var profile = await _parser.ParseProfileAsync(profileName);
 
-            foreach (var deviceConfig in profile.Devices)
-                await _apiClient.ApplyAsync(deviceConfig);
+            // Envoie tous les DeviceConfig en parallèle.
+            // L'API L-Connect locale gère chaque type indépendamment ;
+            // les envoyer simultanément élimine le retard visible entre
+            // l'application des couleurs et celle des ventilateurs.
+            await Task.WhenAll(
+                profile.Devices.Select(d => _apiClient.ApplyAsync(d)));
         }
         catch (ProfileNotFoundException ex)
         {
