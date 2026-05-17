@@ -341,15 +341,6 @@ public sealed class JsonProfileParser : IProfileParser
                 }
         }
 
-        // -----------------------------------------------------------------------
-        // Source des valeurs (Colors, Speed, Brightness, Direction) :
-        //   - Mode statique  : noeud "Static" du profil actif
-        //   - Mode dynamique : noeud "High" de DynamicSettings (fallback : "Static")
-        //
-        // Toutes les valeurs sont lues depuis le JSON du profil.
-        // Static, DynamicHigh et DynamicLow reçoivent la même section
-        // (conformément au JSON de référence).
-        // -----------------------------------------------------------------------
         AioLightingSection sourceSection;
 
         if (!isDynamic)
@@ -394,19 +385,20 @@ public sealed class JsonProfileParser : IProfileParser
 
     /// <summary>
     /// Extrait Speed, Brightness, Direction et Colors depuis un noeud JSON AIO.
-    /// Toutes les valeurs proviennent exclusivement du JSON du profil actif.
+    /// Valeurs lues depuis le JSON du profil actif.
+    /// Fallbacks si la clé est absente ou null : Speed=75, Brightness=100, Direction=0.
     /// </summary>
     private static AioLightingSection ExtractAioSection(JsonNode? node)
     {
-        if (node is null) return new AioLightingSection();
+        if (node is null) return new AioLightingSection { Speed = 75, Brightness = 100 };
 
         var speedNode      = node["Speed"];
         var brightnessNode = node["Brightness"];
 
         return new AioLightingSection
         {
-            Speed      = (speedNode      is not null && speedNode.GetValueKind()      != System.Text.Json.JsonValueKind.Null) ? speedNode.GetValue<int>()      : 0,
-            Brightness = (brightnessNode is not null && brightnessNode.GetValueKind() != System.Text.Json.JsonValueKind.Null) ? brightnessNode.GetValue<int>() : 0,
+            Speed      = (speedNode      is not null && speedNode.GetValueKind()      != System.Text.Json.JsonValueKind.Null) ? speedNode.GetValue<int>()      : 75,
+            Brightness = (brightnessNode is not null && brightnessNode.GetValueKind() != System.Text.Json.JsonValueKind.Null) ? brightnessNode.GetValue<int>() : 100,
             Direction  = node["Direction"] is not null ? node["Direction"]!.GetValue<int>() : 0,
             Colors     = ExtractColors(node["Colors"]?.AsArray())
         };
