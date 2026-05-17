@@ -10,21 +10,34 @@ namespace LConnect.AutoProfiler.Infrastructure.Windows;
 
 /// <summary>
 /// Surveille la fenêtre active via P/Invoke (Win32 API).
-/// Poll toutes les secondes — consommation CPU négligeable (~0%).
+/// Poll toutes les 150 ms avec debounce 200 ms — consommation CPU négligeable (~0%).
 /// </summary>
 public sealed class Win32WindowMonitor : IWindowMonitor, IDisposable
 {
-    // ── Win32 P/Invoke ──────────────────────────────────────────────────────
+    // ── Win32 P/Invoke ────────────────────────────────────────────────────
     [DllImport("user32.dll")]
     private static extern IntPtr GetForegroundWindow();
 
     [DllImport("user32.dll")]
     private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
 
-    // ── Membres ─────────────────────────────────────────────────────────────
+    // ── Constantes ────────────────────────────────────────────────────
+
+    /// <summary>Fréquence de détection de la fenêtre active.</summary>
+    private const int PollIntervalMs = 150;
+
+    /// <summary>
+    /// Durée pendant laquelle le processus détecté doit être stable avant
+    /// de déclencher l'événement. Évite de spammer l'API lors d'un Alt+Tab rapide.
+    /// </summary>
+    private const int DebounceMs = 200;
+
+    // ── Membres ────────────────────────────────────────────────────
     private readonly ILogger<Win32WindowMonitor> _logger;
     private CancellationTokenSource? _cts;
-    private string _lastProcessName = string.Empty;
+    private string _lastProcessName  = string.Empty;
+    private string _pendingProcess   = string.Empty;
+    private int    _pendingTicksMs   = 0;
 
     public event EventHandler<string>? OnForegroundProcessChanged;
 
@@ -33,12 +46,13 @@ public sealed class Win32WindowMonitor : IWindowMonitor, IDisposable
         _logger = logger;
     }
 
-    // ── API publique ─────────────────────────────────────────────────────────
+    // ── API publique ───────────────────────────────────────────────────
     public void StartMonitoring()
     {
         _cts = new CancellationTokenSource();
         Task.Run(() => PollLoop(_cts.Token));
-        _logger.LogInformation("Win32WindowMonitor: polling started.");
+        _logger.LogInformation("Win32WindowMonitor: polling started (interval={Poll}ms, debounce={Debounce}ms).",
+            PollIntervalMs, DebounceMs);
     }
 
     public void StopMonitoring()
@@ -50,7 +64,7 @@ public sealed class Win32WindowMonitor : IWindowMonitor, IDisposable
     public string GetCurrentForegroundProcessName()
         => ResolveProcessName(GetForegroundWindow());
 
-    // ── Boucle interne ───────────────────────────────────────────────────────
+    // ── Boucle interne ──────────────────────────────────────────────────
     private async Task PollLoop(CancellationToken token)
     {
         while (!token.IsCancellationRequested)
@@ -59,12 +73,30 @@ public sealed class Win32WindowMonitor : IWindowMonitor, IDisposable
             {
                 var current = GetCurrentForegroundProcessName();
 
-                if (!string.Equals(current, _lastProcessName, StringComparison.OrdinalIgnoreCase)
-                    && !string.IsNullOrEmpty(current))
+                if (string.IsNullOrEmpty(current))
                 {
-                    _lastProcessName = current;
-                    _logger.LogDebug("Foreground → {Process}", current);
-                    OnForegroundProcessChanged?.Invoke(this, current);
+                    _pendingProcess = string.Empty;
+                    _pendingTicksMs = 0;
+                }
+                else if (string.Equals(current, _pendingProcess, StringComparison.OrdinalIgnoreCase))
+                {
+                    // Même processus en attente : incrémenter le compteur de stabilité
+                    _pendingTicksMs += PollIntervalMs;
+
+                    if (_pendingTicksMs >= DebounceMs
+                        && !string.Equals(current, _lastProcessName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        _lastProcessName = current;
+                        _pendingTicksMs  = 0;
+                        _logger.LogDebug("Foreground (stable) → {Process}", current);
+                        OnForegroundProcessChanged?.Invoke(this, current);
+                    }
+                }
+                else
+                {
+                    // Nouveau processus détecté — relancer le debounce
+                    _pendingProcess = current;
+                    _pendingTicksMs = PollIntervalMs; // un tick déjà écoulé
                 }
             }
             catch (Exception ex)
@@ -72,7 +104,7 @@ public sealed class Win32WindowMonitor : IWindowMonitor, IDisposable
                 _logger.LogWarning(ex, "Win32WindowMonitor: error during poll.");
             }
 
-            await Task.Delay(1000, token); // Poll toutes les secondes
+            await Task.Delay(PollIntervalMs, token);
         }
     }
 
@@ -85,7 +117,7 @@ public sealed class Win32WindowMonitor : IWindowMonitor, IDisposable
         try
         {
             using var proc = Process.GetProcessById((int)pid);
-            return proc.ProcessName + ".exe"; // ex: "cyberpunk2077.exe"
+            return proc.ProcessName + ".exe";
         }
         catch
         {
