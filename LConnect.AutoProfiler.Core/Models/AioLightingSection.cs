@@ -2,10 +2,10 @@ using System.Collections.Generic;
 
 namespace LConnect.AutoProfiler.Core.Models;
 
-public class AioLightingSection
+public record AioLightingSection
 {
-    public List<LightingColor> Colors { get; set; } = new();
-    public int Speed { get; set; }
-    public int Brightness { get; set; }
-    public int Direction { get; set; } = 0;
+    public List<LightingColor> Colors { get; init; } = new();
+    public int Speed      { get; init; }
+    public int Brightness { get; init; }
+    public int Direction  { get; init; } = 0;
 }
