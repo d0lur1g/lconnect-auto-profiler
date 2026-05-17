@@ -4,6 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using LConnect.AutoProfiler.Application.Exceptions;
 using LConnect.AutoProfiler.Core.Interfaces;
+using LConnect.AutoProfiler.Core.Models;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
@@ -74,12 +75,7 @@ public sealed class ProfileOrchestrator : BackgroundService
 
             var profile = await _parser.ParseProfileAsync(profileName);
 
-            // Envoie tous les DeviceConfig en parallèle.
-            // L'API L-Connect locale gère chaque type indépendamment ;
-            // les envoyer simultanément élimine le retard visible entre
-            // l'application des couleurs et celle des ventilateurs.
-            await Task.WhenAll(
-                profile.Devices.Select(d => _apiClient.ApplyAsync(d)));
+            await ApplyProfileAsync(profile);
         }
         catch (ProfileNotFoundException ex)
         {
@@ -89,5 +85,40 @@ public sealed class ProfileOrchestrator : BackgroundService
         {
             _logger.LogError(ex, "Unexpected error while applying profile for '{Process}'", processName);
         }
+    }
+
+    /// <summary>
+    /// Applique le profil en respectant l'ordre du Program.cs de référence :
+    ///
+    ///   ÉTAPE 1 — Éclairage en PREMIER (GA II + AIO en parallèle)
+    ///     LightingSetting  (GA II)
+    ///     ScreenLEDLighting (AIO)
+    ///
+    ///   ÉTAPE 2 — Ventilateurs après (GA II + AIO en parallèle)
+    ///     SetFanSpeed (GA II)
+    ///     PumpSpeed   (AIO)
+    ///     FanSpeed    (AIO)
+    ///
+    /// GA II et AIO s'exécutent en parallèle entre eux à chaque étape,
+    /// mais les deux étapes restent séquentielles : l'éclairage passe
+    /// toujours en premier, avant que les fans ne mobilisent le device.
+    /// </summary>
+    private async Task ApplyProfileAsync(LightingProfile profile)
+    {
+        // Étape 1 : éclairage uniquement
+        var lightingDevices = profile.Devices
+            .Where(d => d.DeviceType is "LightingSetting" or "ScreenLEDLighting")
+            .ToList();
+
+        if (lightingDevices.Count > 0)
+            await Task.WhenAll(lightingDevices.Select(d => _apiClient.ApplyAsync(d)));
+
+        // Étape 2 : fans / pompe
+        var fanDevices = profile.Devices
+            .Where(d => d.DeviceType is "SetFanSpeed" or "PumpSpeed" or "FanSpeed")
+            .ToList();
+
+        if (fanDevices.Count > 0)
+            await Task.WhenAll(fanDevices.Select(d => _apiClient.ApplyAsync(d)));
     }
 }
