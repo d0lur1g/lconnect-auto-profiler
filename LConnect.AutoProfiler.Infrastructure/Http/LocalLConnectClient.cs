@@ -12,6 +12,12 @@ namespace LConnect.AutoProfiler.Infrastructure.Http;
 
 /// <summary>
 /// Envoie les requêtes POST vers l'API locale L-Connect (127.0.0.1:11021).
+///
+/// Encodage devicePath : Base64(UTF8) puis Uri.EscapeDataString
+/// (identique à ce que fait L-Connect UI, confirmé par capture Fiddler).
+///
+/// Sérialisation JSON : PascalCase (PropertyNamingPolicy = null)
+/// L-Connect attend Port/Mode/Colors/R/G/B en majuscules.
 /// </summary>
 public sealed class LocalLConnectClient : ILConnectApiClient
 {
@@ -21,44 +27,41 @@ public sealed class LocalLConnectClient : ILConnectApiClient
 
     private static readonly JsonSerializerOptions JsonOpts = new()
     {
-        PropertyNamingPolicy = null,
-        WriteIndented = false
+        PropertyNamingPolicy = null,   // PascalCase
+        WriteIndented        = false
     };
 
     public LocalLConnectClient(
-        HttpClient http,
+        HttpClient                   http,
         IOptions<LConnectApiOptions> options,
         ILogger<LocalLConnectClient> logger)
     {
-        _http = http;
+        _http    = http;
         _options = options.Value;
-        _logger = logger;
+        _logger  = logger;
     }
 
     public async Task ApplyLightingAsync(DeviceConfig config)
     {
-        // URL : http://127.0.0.1:11021/?action=Device&devicePath={encodé}&type={type}
-        var rawHidPath = config.DevicePath.Contains("::")
-    ? config.DevicePath[..config.DevicePath.IndexOf("::", StringComparison.Ordinal)]
-    : config.DevicePath;
+        // Encodage : Base64(UTF8(rawHidPath)) puis URL-encode
         var encodedPath = Uri.EscapeDataString(
-    Convert.ToBase64String(Encoding.UTF8.GetBytes(rawHidPath)));
-        var url = $"{_options.BaseUrl}?action=Device&devicePath={encodedPath}&type={config.DeviceType}";
+            Convert.ToBase64String(Encoding.UTF8.GetBytes(config.DevicePath)));
 
+        var url     = $"{_options.BaseUrl}?action=Device&devicePath={encodedPath}&type={config.DeviceType}";
         var payload = JsonSerializer.Serialize(config.Settings, JsonOpts);
         var content = new StringContent(payload, Encoding.UTF8, "application/json");
 
-        _logger.LogDebug("POST {Url} — Payload: {Payload}", url, payload);
+        _logger.LogDebug("POST {Url} -- Payload: {Payload}", url, payload);
 
         try
         {
             var response = await _http.PostAsync(url, content);
 
             if (response.IsSuccessStatusCode)
-                _logger.LogInformation("✓ Applied [{Type}] for device '{Path}'",
+                _logger.LogInformation("\u2713 Applied [{Type}] for device '{Path}'",
                     config.DeviceType, config.DevicePath);
             else
-                _logger.LogWarning("✗ L-Connect returned {Status} for [{Type}] on '{Path}'",
+                _logger.LogWarning("\u2717 L-Connect returned {Status} for [{Type}] on '{Path}'",
                     (int)response.StatusCode, config.DeviceType, config.DevicePath);
         }
         catch (HttpRequestException ex)
