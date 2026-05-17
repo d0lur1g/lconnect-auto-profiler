@@ -117,8 +117,11 @@ public sealed class JsonProfileParser : IProfileParser
             if (rpmSetting is not null)
             {
                 var activeMode  = rpmSetting["Mode"]?.GetValue<int>() ?? 1;
+                var minSpeed    = rpmSetting["Profiles"]?.AsObject() is { } prof
+                                  ? ResolveMinSpeed(prof, activeMode)
+                                  : 210;
                 var fanProfiles = rpmSetting["Profiles"]?.AsObject();
-                var fanCurve    = ExtractActiveFanCurve(fanProfiles, activeMode, groupName);
+                var fanCurve    = ExtractActiveFanCurve(fanProfiles, activeMode, groupName, minSpeed, isGaII: true);
                 if (fanCurve is not null)
                     fanConfig.FanGroups!.Add(new FanGroupConfig { FanGroupIndex = groupIndex, Config = fanCurve });
             }
@@ -156,7 +159,7 @@ public sealed class JsonProfileParser : IProfileParser
 
         var pumpSetting    = data["Pump"];
         var activePumpMode = pumpSetting?["Mode"]?.GetValue<int>() ?? 10;
-        var pumpCurve      = ExtractActiveFanCurve(pumpSetting?["Profiles"]?.AsObject(), activePumpMode, "Pump");
+        var pumpCurve      = ExtractActiveFanCurve(pumpSetting?["Profiles"]?.AsObject(), activePumpMode, "Pump", minSpeed: 0, isGaII: false);
         if (pumpCurve is not null)
             profile.Devices.Add(new DeviceConfig
             {
@@ -167,7 +170,7 @@ public sealed class JsonProfileParser : IProfileParser
 
         var fanSetting    = data["Fan"];
         var activeFanMode = fanSetting?["Mode"]?.GetValue<int>() ?? 1;
-        var fanCurve      = ExtractActiveFanCurve(fanSetting?["Profiles"]?.AsObject(), activeFanMode, "AIO Fan");
+        var fanCurve      = ExtractActiveFanCurve(fanSetting?["Profiles"]?.AsObject(), activeFanMode, "AIO Fan", minSpeed: 0, isGaII: false);
         if (fanCurve is not null)
             profile.Devices.Add(new DeviceConfig
             {
@@ -200,8 +203,7 @@ public sealed class JsonProfileParser : IProfileParser
 
             _logger.LogDebug("  [{Label}] mode {Mode} -> '{Key}'", label, targetMode, entry.Key);
 
-            // Speed est déjà une valeur brute (0-255) dans LightingSettings du JSON.
-            // null = mode statique sans speed (ex: StaticColor), on envoie 0.
+            // Speed : null (ex: StaticColor) → 0 comme sentinel API
             var speedNode = node["Speed"];
             var speed     = (speedNode is not null && speedNode.GetValueKind() != System.Text.Json.JsonValueKind.Null)
                             ? speedNode.GetValue<int>()
@@ -213,7 +215,7 @@ public sealed class JsonProfileParser : IProfileParser
                 Mode       = targetMode,
                 Speed      = speed,
                 Direction  = node["Direction"] is not null ? node["Direction"]!.GetValue<int>() : 0,
-                Brightness = 0,
+                Brightness = 0,   // 0 = sentinel "utilise la brightness du device" (confirmé Program.cs)
                 Colors     = ExtractColors(node["Colors"]?.AsArray())
             };
         }
@@ -222,8 +224,27 @@ public sealed class JsonProfileParser : IProfileParser
         return new LightingSetting { Port = port, Mode = targetMode };
     }
 
+    /// <summary>
+    /// Résout le MinSpeed du profil actif (premier PhaseInfo trouvé).
+    /// Utilisé pour insérer le point T=0 en tête des phases GA II.
+    /// </summary>
+    private static int ResolveMinSpeed(JsonObject profiles, int targetMode)
+    {
+        foreach (var entry in profiles)
+        {
+            if (entry.Value?["Mode"]?.GetValue<int>() != targetMode) continue;
+            var phaseInfos = entry.Value["PhaseInfos"]?.AsObject();
+            if (phaseInfos is null) break;
+            foreach (var pi in phaseInfos)
+            {
+                return pi.Value?["MinSpeed"]?.GetValue<int>() ?? 210;
+            }
+        }
+        return 210;
+    }
+
     private FanCurveConfig? ExtractActiveFanCurve(
-        JsonObject? profiles, int targetMode, string label)
+        JsonObject? profiles, int targetMode, string label, int minSpeed, bool isGaII)
     {
         if (profiles is null) return null;
 
@@ -256,6 +277,11 @@ public sealed class JsonProfileParser : IProfileParser
         if (phaseInfo is null) return null;
 
         var phases = new List<FanPhase>();
+
+        // GA II : l'API exige un premier point {Temperature=0, Speed=MinSpeed} (confirmé Program.cs)
+        if (isGaII)
+            phases.Add(new FanPhase { Temperature = 0, Speed = minSpeed });
+
         foreach (var phaseNode in phaseInfo["Phases"]?.AsArray() ?? new JsonArray())
         {
             if (phaseNode is null) continue;
@@ -264,6 +290,13 @@ public sealed class JsonProfileParser : IProfileParser
                 Temperature = phaseNode["Temperature"]?.GetValue<int>() ?? 0,
                 Speed       = phaseNode["Speed"]?.GetValue<int>()       ?? 0
             });
+        }
+
+        // GA II : l'API exige un dernier point {Temperature=100, Speed=MaxSpeed}
+        if (isGaII)
+        {
+            var maxSpeed = phaseInfo["MaxSpeed"]?.GetValue<int>() ?? 2100;
+            phases.Add(new FanPhase { Temperature = 100, Speed = maxSpeed });
         }
 
         return new FanCurveConfig
@@ -327,10 +360,17 @@ public sealed class JsonProfileParser : IProfileParser
             Mode          = targetMode,
             IsDynamicMode = isDynamic,
             SensorType    = sensorType,
-            Range         = new SensorRange { HighValue = highValue, LowValue = lowValue },
-            Static        = ExtractAioSection(staticNode),
-            DynamicHigh   = ExtractAioSection(highNode),
-            DynamicLow    = ExtractAioSection(lowNode)
+            // MaxValue=100 et MinValue=0 sont requis par l'API (confirmé Program.cs)
+            Range         = new SensorRange
+            {
+                HighValue = highValue,
+                LowValue  = lowValue,
+                MaxValue  = 100,
+                MinValue  = 0
+            },
+            Static      = ExtractAioSection(staticNode),
+            DynamicHigh = ExtractAioSection(highNode),
+            DynamicLow  = ExtractAioSection(lowNode)
         };
     }
 
@@ -363,6 +403,11 @@ public sealed class JsonProfileParser : IProfileParser
         _                => 1
     };
 
+    /// <summary>
+    /// Recalcule ScA/ScR/ScG/ScB depuis les valeurs ARGB brutes (gamma 2.2),
+    /// identique à CreateColor() dans Program.cs. Les valeurs Sc du JSON sont
+    /// des arrondis de sauvegarde et ne doivent PAS être réutilisées.
+    /// </summary>
     private static List<LightingColor> ExtractColors(JsonArray? colorsArray)
     {
         if (colorsArray is null) return new List<LightingColor>();
@@ -384,10 +429,10 @@ public sealed class JsonProfileParser : IProfileParser
                 R   = r,
                 G   = g,
                 B   = b,
-                ScA = colorNode["ScA"]?.GetValue<double>() ?? 1.0,
-                ScR = colorNode["ScR"]?.GetValue<double>() ?? Math.Pow(r / 255.0, 2.2),
-                ScG = colorNode["ScG"]?.GetValue<double>() ?? Math.Pow(g / 255.0, 2.2),
-                ScB = colorNode["ScB"]?.GetValue<double>() ?? Math.Pow(b / 255.0, 2.2),
+                ScA = 1.0,                          // toujours 1.0 (confirmé Program.cs)
+                ScR = LightingColor.ToLinear(r),    // recalculé depuis R, pas lu depuis JSON
+                ScG = LightingColor.ToLinear(g),
+                ScB = LightingColor.ToLinear(b)
             });
         }
         return result;

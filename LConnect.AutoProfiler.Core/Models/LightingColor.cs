@@ -14,23 +14,22 @@ public sealed class LightingColor
     public double ScG { get; set; }
     public double ScB { get; set; }
 
-    /// <summary>Construit une couleur avec ScA/ScR/ScG/ScB calculés (sRGB IEC).</summary>
+    /// <summary>
+    /// Construit une couleur avec Sc* calculés via gamma 2.2,
+    /// identique à la formule utilisée par L-Connect (Program.cs référence).
+    /// </summary>
     public static LightingColor From(int a, int r, int g, int b) => new()
     {
-        A = a,
-        R = r,
-        G = g,
-        B = b,
-        ScA = a / 255.0,
+        A   = a,
+        R   = r,
+        G   = g,
+        B   = b,
+        ScA = 1.0,
         ScR = ToLinear(r),
         ScG = ToLinear(g),
         ScB = ToLinear(b)
     };
 
-    // Conversion sRGB standard IEC (confirmée par capture Wireshark L-Connect)
-    private static double ToLinear(int c)
-    {
-        double v = c / 255.0;
-        return v <= 0.04045 ? v / 12.92 : Math.Pow((v + 0.055) / 1.055, 2.4);
-    }
+    // Gamma 2.2 pur — confirmé par capture Program.cs L-Connect
+    public static double ToLinear(int c) => Math.Pow(c / 255.0, 2.2);
 }
