@@ -203,18 +203,11 @@ public sealed class JsonProfileParser : IProfileParser
 
             _logger.LogDebug("  [{Label}] mode {Mode} -> '{Key}'", label, targetMode, entry.Key);
 
-            // Speed est nullable : null si le mode ne supporte pas de vitesse (ex: StaticColor).
-            // Valeurs valides : null, 25, 75, 100.
-            var speedNode = node["Speed"];
-            int? speed = (speedNode is not null && speedNode.GetValueKind() != System.Text.Json.JsonValueKind.Null)
-                         ? speedNode.GetValue<int>()
-                         : null;
-
             return new LightingSetting
             {
                 Port       = port,
                 Mode       = targetMode,
-                Speed      = speed,
+                Speed      = 255, // TEST HARDCODÉ — à supprimer après validation
                 Direction  = node["Direction"] is not null ? node["Direction"]!.GetValue<int>() : 0,
                 Brightness = 0,
                 Colors     = ExtractColors(node["Colors"]?.AsArray())
@@ -418,8 +411,7 @@ public sealed class JsonProfileParser : IProfileParser
 
     /// <summary>
     /// Extrait la liste des couleurs depuis un tableau JSON.
-    /// Chaque couleur peut avoir 0 à 4 entrées selon le mode d'éclairage
-    /// (ex: StaticColor=1, Breathing=1, Rainbow=0, Disco=4, MeteorRainbow=0, etc.).
+    /// Chaque couleur peut avoir 0 à 4 entrées selon le mode d'éclairage.
     /// ColorContext est lu depuis le JSON (string ou null).
     /// </summary>
     private static List<LightingColor> ExtractColors(JsonArray? colorsArray)
@@ -436,7 +428,6 @@ public sealed class JsonProfileParser : IProfileParser
             var g = colorNode["G"]?.GetValue<int>() ?? 0;
             var b = colorNode["B"]?.GetValue<int>() ?? 0;
 
-            // ColorContext est une string nullable (ex: "Color1", "Color2", null selon le mode).
             var colorContextNode = colorNode["ColorContext"];
             var colorContext = (colorContextNode is not null && colorContextNode.GetValueKind() != System.Text.Json.JsonValueKind.Null)
                                ? colorContextNode.GetValue<string>()
