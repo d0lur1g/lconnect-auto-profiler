@@ -190,12 +190,6 @@ public sealed class JsonProfileParser : IProfileParser
         return Path.GetFullPath(Path.Combine(repoRoot, relativePath));
     }
 
-    /// <summary>
-    /// LightingSetting : Speed stocké en % (0-100) dans le JSON,
-    /// mais l’API GA II attend une valeur brute 0-255.
-    /// </summary>
-    private static int PctToRaw255(int pct) => (int)Math.Round(pct / 100.0 * 255);
-
     private LightingSetting ExtractActiveLightingSetting(
         JsonObject allSettings, int targetMode, int port, string label)
     {
@@ -206,15 +200,20 @@ public sealed class JsonProfileParser : IProfileParser
 
             _logger.LogDebug("  [{Label}] mode {Mode} -> '{Key}'", label, targetMode, entry.Key);
 
-            var speedPct = node["Speed"] is not null ? node["Speed"]!.GetValue<int>() : 75;
+            // Speed est déjà une valeur brute (0-255) dans LightingSettings du JSON.
+            // null = mode statique sans speed (ex: StaticColor), on envoie 0.
+            var speedNode = node["Speed"];
+            var speed     = (speedNode is not null && speedNode.GetValueKind() != System.Text.Json.JsonValueKind.Null)
+                            ? speedNode.GetValue<int>()
+                            : 0;
 
             return new LightingSetting
             {
                 Port       = port,
                 Mode       = targetMode,
-                Speed      = PctToRaw255(speedPct),  // 0-255 attendu par l’API GA II
+                Speed      = speed,
                 Direction  = node["Direction"] is not null ? node["Direction"]!.GetValue<int>() : 0,
-                Brightness = 0,   // L’API GA II attend 0
+                Brightness = 0,
                 Colors     = ExtractColors(node["Colors"]?.AsArray())
             };
         }
@@ -339,8 +338,10 @@ public sealed class JsonProfileParser : IProfileParser
     {
         if (node is null) return new AioLightingSection();
 
-        // ScreenLEDLighting : Speed en % 0-100, pas de conversion (confirmé par Program.cs)
-        var speed = node["Speed"] is not null ? node["Speed"]!.GetValue<int>() : 75;
+        var speedNode = node["Speed"];
+        var speed     = (speedNode is not null && speedNode.GetValueKind() != System.Text.Json.JsonValueKind.Null)
+                        ? speedNode.GetValue<int>()
+                        : 0;
 
         return new AioLightingSection
         {
@@ -362,9 +363,6 @@ public sealed class JsonProfileParser : IProfileParser
         _                => 1
     };
 
-    /// <summary>
-    /// Lit les ScR/ScG/ScB directement depuis le JSON (valeurs stockées par L-Connect).
-    /// </summary>
     private static List<LightingColor> ExtractColors(JsonArray? colorsArray)
     {
         if (colorsArray is null) return new List<LightingColor>();
