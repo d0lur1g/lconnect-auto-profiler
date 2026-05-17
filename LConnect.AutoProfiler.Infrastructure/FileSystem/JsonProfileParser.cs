@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text.Json.Nodes;
 using System.Threading.Tasks;
 using LConnect.AutoProfiler.Application.Exceptions;
@@ -203,7 +204,6 @@ public sealed class JsonProfileParser : IProfileParser
 
             _logger.LogDebug("  [{Label}] mode {Mode} -> '{Key}'", label, targetMode, entry.Key);
 
-            // Speed : null (ex: StaticColor) → 0 comme sentinel API
             var speedNode = node["Speed"];
             var speed     = (speedNode is not null && speedNode.GetValueKind() != System.Text.Json.JsonValueKind.Null)
                             ? speedNode.GetValue<int>()
@@ -215,7 +215,7 @@ public sealed class JsonProfileParser : IProfileParser
                 Mode       = targetMode,
                 Speed      = speed,
                 Direction  = node["Direction"] is not null ? node["Direction"]!.GetValue<int>() : 0,
-                Brightness = 0,   // 0 = sentinel "utilise la brightness du device" (confirmé Program.cs)
+                Brightness = 0,
                 Colors     = ExtractColors(node["Colors"]?.AsArray())
             };
         }
@@ -224,10 +224,6 @@ public sealed class JsonProfileParser : IProfileParser
         return new LightingSetting { Port = port, Mode = targetMode };
     }
 
-    /// <summary>
-    /// Résout le MinSpeed du profil actif (premier PhaseInfo trouvé).
-    /// Utilisé pour insérer le point T=0 en tête des phases GA II.
-    /// </summary>
     private static int ResolveMinSpeed(JsonObject profiles, int targetMode)
     {
         foreach (var entry in profiles)
@@ -236,9 +232,7 @@ public sealed class JsonProfileParser : IProfileParser
             var phaseInfos = entry.Value["PhaseInfos"]?.AsObject();
             if (phaseInfos is null) break;
             foreach (var pi in phaseInfos)
-            {
                 return pi.Value?["MinSpeed"]?.GetValue<int>() ?? 210;
-            }
         }
         return 210;
     }
@@ -278,7 +272,6 @@ public sealed class JsonProfileParser : IProfileParser
 
         var phases = new List<FanPhase>();
 
-        // GA II : l'API exige un premier point {Temperature=0, Speed=MinSpeed} (confirmé Program.cs)
         if (isGaII)
             phases.Add(new FanPhase { Temperature = 0, Speed = minSpeed });
 
@@ -292,7 +285,6 @@ public sealed class JsonProfileParser : IProfileParser
             });
         }
 
-        // GA II : l'API exige un dernier point {Temperature=100, Speed=MaxSpeed}
         if (isGaII)
         {
             var maxSpeed = phaseInfo["MaxSpeed"]?.GetValue<int>() ?? 2100;
@@ -355,12 +347,61 @@ public sealed class JsonProfileParser : IProfileParser
             }
         }
 
+        // Extraire les 3 sections depuis le JSON
+        var staticSection  = ExtractAioSection(staticNode);
+        var highSection    = ExtractAioSection(highNode);
+        var lowSection     = ExtractAioSection(lowNode);
+
+        // -----------------------------------------------------------------------
+        // L'API L-Connect exige que Static, DynamicHigh et DynamicLow soient
+        // toujours remplis avec des couleurs, même en mode statique.
+        // (Confirmé par Program.cs référence : les 3 sections reçoivent
+        //  toujours les mêmes couleurs.)
+        //
+        // Règle de propagation :
+        //  - Mode statique : staticNode est la source, high/low reçoivent
+        //    ses couleurs s'ils sont vides.
+        //  - Mode dynamique : si staticNode est absent/vide, Static
+        //    reçoit les couleurs de DynamicHigh.
+        //  - Fallback final : toute section vide reçoit les couleurs de
+        //    la première section non vide.
+        // -----------------------------------------------------------------------
+        var referenceColors = staticSection.Colors.Count > 0
+            ? staticSection.Colors
+            : highSection.Colors.Count > 0
+                ? highSection.Colors
+                : lowSection.Colors;
+
+        if (staticSection.Colors.Count == 0)
+            staticSection = staticSection with { Colors = referenceColors };
+
+        if (highSection.Colors.Count == 0)
+            highSection = highSection with
+            {
+                Colors     = referenceColors,
+                Speed      = staticSection.Speed,
+                Brightness = staticSection.Brightness,
+                Direction  = staticSection.Direction
+            };
+
+        if (lowSection.Colors.Count == 0)
+            lowSection = lowSection with
+            {
+                Colors     = referenceColors,
+                Speed      = staticSection.Speed,
+                Brightness = staticSection.Brightness,
+                Direction  = staticSection.Direction
+            };
+
+        _logger.LogDebug(
+            "[AIO] Static={SC} color(s), DynamicHigh={HC} color(s), DynamicLow={LC} color(s)",
+            staticSection.Colors.Count, highSection.Colors.Count, lowSection.Colors.Count);
+
         return new AioLightingConfig
         {
             Mode          = targetMode,
             IsDynamicMode = isDynamic,
             SensorType    = sensorType,
-            // MaxValue=100 et MinValue=0 sont requis par l'API (confirmé Program.cs)
             Range         = new SensorRange
             {
                 HighValue = highValue,
@@ -368,9 +409,9 @@ public sealed class JsonProfileParser : IProfileParser
                 MaxValue  = 100,
                 MinValue  = 0
             },
-            Static      = ExtractAioSection(staticNode),
-            DynamicHigh = ExtractAioSection(highNode),
-            DynamicLow  = ExtractAioSection(lowNode)
+            Static      = staticSection,
+            DynamicHigh = highSection,
+            DynamicLow  = lowSection
         };
     }
 
@@ -403,11 +444,6 @@ public sealed class JsonProfileParser : IProfileParser
         _                => 1
     };
 
-    /// <summary>
-    /// Recalcule ScA/ScR/ScG/ScB depuis les valeurs ARGB brutes (gamma 2.2),
-    /// identique à CreateColor() dans Program.cs. Les valeurs Sc du JSON sont
-    /// des arrondis de sauvegarde et ne doivent PAS être réutilisées.
-    /// </summary>
     private static List<LightingColor> ExtractColors(JsonArray? colorsArray)
     {
         if (colorsArray is null) return new List<LightingColor>();
@@ -429,8 +465,8 @@ public sealed class JsonProfileParser : IProfileParser
                 R   = r,
                 G   = g,
                 B   = b,
-                ScA = 1.0,                          // toujours 1.0 (confirmé Program.cs)
-                ScR = LightingColor.ToLinear(r),    // recalculé depuis R, pas lu depuis JSON
+                ScA = 1.0,
+                ScR = LightingColor.ToLinear(r),
                 ScG = LightingColor.ToLinear(g),
                 ScB = LightingColor.ToLinear(b)
             });
