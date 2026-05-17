@@ -23,6 +23,7 @@ public sealed class ProfileOrchestrator : BackgroundService
     private readonly ILogger<ProfileOrchestrator> _logger;
 
     private string _lastProcessName = string.Empty;
+    private string _lastProfileName = string.Empty;
 
     public ProfileOrchestrator(
         IWindowMonitor windowMonitor,
@@ -47,10 +48,7 @@ public sealed class ProfileOrchestrator : BackgroundService
 
         // Appliquer immédiatement le profil correspondant à la fenêtre déjà active
         var current = _windowMonitor.GetCurrentForegroundProcessName();
-        if (!string.IsNullOrEmpty(current))
-            await ApplyProfileForProcessAsync(current);
-        else
-            await ApplyProfileForProcessAsync(string.Empty); // déclenchera le default
+        await ApplyProfileForProcessAsync(current);
 
         await Task.Delay(Timeout.Infinite, stoppingToken)
                   .ContinueWith(_ =>
@@ -66,14 +64,12 @@ public sealed class ProfileOrchestrator : BackgroundService
             return;
 
         _lastProcessName = processName;
-        _logger.LogDebug("Foreground process changed → {Process}", processName);
-
         await ApplyProfileForProcessAsync(processName);
     }
 
     /// <summary>
     /// Détermine et applique le profil pour un nom de processus donné.
-    /// Si le processus est vide ou inconnu, le profil par défaut est utilisé.
+    /// Un processus vide (bureau, système) déclenche le profil par défaut.
     /// </summary>
     private async Task ApplyProfileForProcessAsync(string processName)
     {
@@ -83,22 +79,34 @@ public sealed class ProfileOrchestrator : BackgroundService
 
             if (string.IsNullOrEmpty(profileName))
             {
-                _logger.LogWarning("No profile mapped for process '{Process}' and no default defined.", processName);
+                _logger.LogWarning("[Focus] '{Process}' → aucun profil défini (default vide).", processName);
                 return;
             }
 
-            _logger.LogInformation("Applying profile '{Profile}' for '{Process}'", profileName, processName);
+            // Ne pas ré-appliquer si c'est le même profil qu'avant
+            if (string.Equals(profileName, _lastProfileName, StringComparison.OrdinalIgnoreCase))
+            {
+                _logger.LogInformation("[Focus] '{Process}' → '{Profile}' (déjà actif, ignoré)",
+                    string.IsNullOrEmpty(processName) ? "(bureau/système)" : processName, profileName);
+                return;
+            }
+
+            _lastProfileName = profileName;
+
+            _logger.LogInformation("[Focus] '{Process}' → '{Profile}'",
+                string.IsNullOrEmpty(processName) ? "(bureau/système)" : processName,
+                profileName);
 
             var profile = await _parser.ParseProfileAsync(profileName);
             await ApplyProfileAsync(profile);
         }
         catch (ProfileNotFoundException ex)
         {
-            _logger.LogError(ex, "Profile file not found: {Message}", ex.Message);
+            _logger.LogError(ex, "[Focus] Profil introuvable : {Message}", ex.Message);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Unexpected error while applying profile for '{Process}'", processName);
+            _logger.LogError(ex, "[Focus] Erreur inattendue pour '{Process}'", processName);
         }
     }
 
@@ -113,14 +121,9 @@ public sealed class ProfileOrchestrator : BackgroundService
     ///     SetFanSpeed (GA II)
     ///     PumpSpeed   (AIO)
     ///     FanSpeed    (AIO)
-    ///
-    /// GA II et AIO s'exécutent en parallèle entre eux à chaque étape,
-    /// mais les deux étapes restent séquentielles : l'éclairage passe
-    /// toujours en premier, avant que les fans ne mobilisent le device.
     /// </summary>
     private async Task ApplyProfileAsync(LightingProfile profile)
     {
-        // Étape 1 : éclairage uniquement
         var lightingDevices = profile.Devices
             .Where(d => d.DeviceType is "LightingSetting" or "ScreenLEDLighting")
             .ToList();
@@ -128,7 +131,6 @@ public sealed class ProfileOrchestrator : BackgroundService
         if (lightingDevices.Count > 0)
             await Task.WhenAll(lightingDevices.Select(d => _apiClient.ApplyAsync(d)));
 
-        // Étape 2 : fans / pompe
         var fanDevices = profile.Devices
             .Where(d => d.DeviceType is "SetFanSpeed" or "PumpSpeed" or "FanSpeed")
             .ToList();
