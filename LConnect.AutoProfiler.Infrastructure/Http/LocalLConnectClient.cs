@@ -76,14 +76,14 @@ public sealed class LocalLConnectClient : ILConnectApiClient
         _logger.LogDebug("POST {Url} | Payload: {Payload}", urlOrder, jsonOrder);
         await PostAsync(urlOrder, jsonOrder, contentOrder, "MergeOrder", devicePath);
 
-        // Étape 2 : MergeLightingSetting — si présent
-        if (mergeOrder.LightingSetting is not null)
+        // Étape 2 : LightingSetting — si présent (même type HTTP que l'appel standard)
+        if (mergeOrder.LightingSettings is not null)
         {
-            var urlLighting = $"{_options.BaseUrl}?action=Device&devicePath={encodedPath}&type=MergeLightingSetting";
-            var jsonLighting = JsonSerializer.Serialize(mergeOrder.LightingSetting, JsonOpts);
+            var urlLighting = $"{_options.BaseUrl}?action=Device&devicePath={encodedPath}&type=LightingSetting";
+            var jsonLighting = JsonSerializer.Serialize(mergeOrder.LightingSettings, JsonOpts);
             var contentLighting = new StringContent(jsonLighting, Encoding.UTF8, "application/json");
             _logger.LogDebug("POST {Url} | Payload: {Payload}", urlLighting, jsonLighting);
-            await PostAsync(urlLighting, jsonLighting, contentLighting, "MergeLightingSetting", devicePath);
+            await PostAsync(urlLighting, jsonLighting, contentLighting, "LightingSetting", devicePath);
         }
     }
 
