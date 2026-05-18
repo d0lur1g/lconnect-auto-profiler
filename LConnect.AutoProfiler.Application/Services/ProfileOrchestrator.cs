@@ -46,7 +46,6 @@ public sealed class ProfileOrchestrator : BackgroundService
 
         _logger.LogInformation("ProfileOrchestrator started — watching foreground window…");
 
-        // Appliquer immédiatement le profil correspondant à la fenêtre déjà active
         var current = _windowMonitor.GetCurrentForegroundProcessName();
         await ApplyProfileForProcessAsync(current);
 
@@ -67,10 +66,6 @@ public sealed class ProfileOrchestrator : BackgroundService
         await ApplyProfileForProcessAsync(processName);
     }
 
-    /// <summary>
-    /// Détermine et applique le profil pour un nom de processus donné.
-    /// Un processus vide (bureau, système) déclenche le profil par défaut.
-    /// </summary>
     private async Task ApplyProfileForProcessAsync(string processName)
     {
         try
@@ -83,7 +78,6 @@ public sealed class ProfileOrchestrator : BackgroundService
                 return;
             }
 
-            // Ne pas ré-appliquer si c'est le même profil qu'avant
             if (string.Equals(profileName, _lastProfileName, StringComparison.OrdinalIgnoreCase))
             {
                 _logger.LogInformation("[Focus] '{Process}' → '{Profile}' (déjà actif, ignoré)",
@@ -111,19 +105,22 @@ public sealed class ProfileOrchestrator : BackgroundService
     }
 
     /// <summary>
-    /// Applique le profil en respectant l'ordre du Program.cs de référence :
+    /// Applique le profil dans l'ordre :
     ///
     ///   ÉTAPE 1 — Éclairage en PREMIER (GA II + AIO en parallèle)
-    ///     LightingSetting  (GA II)
+    ///     LightingSetting   (GA II)
     ///     ScreenLEDLighting (AIO)
     ///
-    ///   ÉTAPE 2 — Ventilateurs après (GA II + AIO en parallèle)
+    ///   ÉTAPE 2 — MergeOrder (si présent dans le profil)
+    ///
+    ///   ÉTAPE 3 — Ventilateurs (GA II + AIO en parallèle)
     ///     SetFanSpeed (GA II)
     ///     PumpSpeed   (AIO)
     ///     FanSpeed    (AIO)
     /// </summary>
     private async Task ApplyProfileAsync(LightingProfile profile)
     {
+        // Étape 1 : éclairage
         var lightingDevices = profile.Devices
             .Where(d => d.DeviceType is "LightingSetting" or "ScreenLEDLighting")
             .ToList();
@@ -131,6 +128,14 @@ public sealed class ProfileOrchestrator : BackgroundService
         if (lightingDevices.Count > 0)
             await Task.WhenAll(lightingDevices.Select(d => _apiClient.ApplyAsync(d)));
 
+        // Étape 2 : MergeOrder
+        if (profile.MergeOrder is not null)
+        {
+            var devicePath = profile.MergeOrder.DevicePath ?? string.Empty;
+            await _apiClient.SendMergeOrderAsync(devicePath, profile.MergeOrder);
+        }
+
+        // Étape 3 : ventilateurs
         var fanDevices = profile.Devices
             .Where(d => d.DeviceType is "SetFanSpeed" or "PumpSpeed" or "FanSpeed")
             .ToList();

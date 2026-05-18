@@ -13,14 +13,17 @@ using Microsoft.Extensions.Options;
 namespace LConnect.AutoProfiler.Infrastructure.FileSystem;
 
 /// <summary>
-/// Lit un fichier JSON fully_decoded L-Connect et construit les 5 DeviceConfig :
-///   Datas[SubType=16789504] (GA II, vid_0cf2) → LightingSetting + SetFanSpeed
-///   Datas[SubType=16846849] (AIO, vid_0416)   → ScreenLEDLighting + PumpSpeed + FanSpeed
+/// Lit un fichier JSON fully_decoded L-Connect et construit le LightingProfile :
+///   Datas[MainType=0, SubType=16789504] (GA II) → LightingSetting + SetFanSpeed
+///   Datas[MainType=0, SubType=16846849] (AIO)   → ScreenLEDLighting + PumpSpeed + FanSpeed
+///   Datas[MainType=2, SubType=0]                → MergeOrder + MergeLightingSetting
 /// </summary>
 public sealed class JsonProfileParser : IProfileParser
 {
-    private const int SubTypeGaII = 16789504;
-    private const int SubTypeAio = 16846849;
+    private const int MainTypeDevice = 0;
+    private const int MainTypeMerge  = 2;
+    private const int SubTypeGaII    = 16789504;
+    private const int SubTypeAio     = 16846849;
 
     private readonly ProfileParserOptions _options;
     private readonly IHostEnvironment _env;
@@ -66,16 +69,19 @@ public sealed class JsonProfileParser : IProfileParser
         {
             if (dataEntry is null) continue;
 
-            var subType = dataEntry["SubType"]?.GetValue<int>() ?? -1;
+            var mainType = dataEntry["MainType"]?.GetValue<int>() ?? -1;
+            var subType  = dataEntry["SubType"]?.GetValue<int>()  ?? -1;
 
-            if (subType == SubTypeGaII)
+            if (mainType == MainTypeDevice && subType == SubTypeGaII)
                 ParseGaII(dataEntry, profile);
-            else if (subType == SubTypeAio)
+            else if (mainType == MainTypeDevice && subType == SubTypeAio)
                 ParseAio(dataEntry, profile);
+            else if (mainType == MainTypeMerge)
+                ParseMerge(dataEntry, profile);
         }
 
-        _logger.LogInformation("Profile '{Name}' parsed: {DeviceCount} device(s).",
-            profileName, profile.Devices.Count);
+        _logger.LogInformation("Profile '{Name}' parsed: {DeviceCount} device(s), MergeOrder={HasMerge}.",
+            profileName, profile.Devices.Count, profile.MergeOrder is not null);
 
         lock (_lock)
         {
@@ -146,8 +152,6 @@ public sealed class JsonProfileParser : IProfileParser
             var lightingModeInner = groupNode["LightingModeInner"]?.GetValue<int>() ?? 0;
             var lightingModeOuter = groupNode["LightingModeOuter"]?.GetValue<int>() ?? 0;
 
-            // Résolution des modes actifs Inner / Outer
-            // Si IsIndividualMode = false, les deux zones utilisent LightingMode.
             var activeInner = isIndividual ? lightingModeInner : lightingMode;
             var activeOuter = isIndividual ? lightingModeOuter : lightingMode;
 
@@ -155,7 +159,6 @@ public sealed class JsonProfileParser : IProfileParser
                 "GA II Group[{Index}] '{Name}': IsIndividual={Ind} LightingMode={Mode} Inner={Inner} Outer={Outer}",
                 groupIndex, groupName, isIndividual, lightingMode, activeInner, activeOuter);
 
-            // Stocker les métadonnées de mode sur le premier groupe (portées par DeviceConfig)
             if (groupIndex == 0)
             {
                 lightingConfig.IsIndividualMode = isIndividual;
@@ -243,6 +246,54 @@ public sealed class JsonProfileParser : IProfileParser
     }
 
     // =========================================================================
+    // Merge (MainType=2)
+    // =========================================================================
+
+    private void ParseMerge(JsonNode dataEntry, LightingProfile profile)
+    {
+        var devicePath = dataEntry["Metadata"]?.GetValue<string>() ?? string.Empty;
+        var data = dataEntry["Data"];
+        if (data is null) return;
+
+        var deviceListNode = data["DeviceList"]?.AsArray();
+        int[] deviceOrder;
+        if (deviceListNode is not null && deviceListNode.Count > 0)
+        {
+            var list = new List<int>();
+            foreach (var item in deviceListNode)
+                if (item is not null) list.Add(item.GetValue<int>());
+            deviceOrder = list.ToArray();
+        }
+        else
+        {
+            deviceOrder = [0, 1, 2, 3];
+        }
+
+        MergeLightingSetting? lightingSetting = null;
+        var mergeNode = data["MergeLightingSetting"];
+        if (mergeNode is not null)
+        {
+            lightingSetting = new MergeLightingSetting
+            {
+                Mode       = mergeNode["Mode"]?.GetValue<int>()       ?? 0,
+                Speed      = mergeNode["Speed"]?.GetValue<int>()      ?? 0,
+                Brightness = mergeNode["Brightness"]?.GetValue<int>() ?? 0,
+                Direction  = mergeNode["Direction"]?.GetValue<int>()  ?? 0
+            };
+        }
+
+        profile.MergeOrder = new MergeOrderConfig
+        {
+            DeviceOrder    = deviceOrder,
+            LightingSetting = lightingSetting,
+            DevicePath     = devicePath
+        };
+
+        _logger.LogDebug("Merge parsed: DeviceOrder=[{Order}], LightingSetting={HasLighting}",
+            string.Join(",", deviceOrder), lightingSetting is not null);
+    }
+
+    // =========================================================================
     // Helpers
     // =========================================================================
 
@@ -271,7 +322,7 @@ public sealed class JsonProfileParser : IProfileParser
             var brightnessNode = node["Brightness"];
             int brightness = (brightnessNode is not null && brightnessNode.GetValueKind() != System.Text.Json.JsonValueKind.Null)
                 ? brightnessNode.GetValue<int>()
-                : 100;
+                : 0;
 
             int direction = node["Direction"] is not null && node["Direction"]!.GetValueKind() != System.Text.Json.JsonValueKind.Null
                 ? node["Direction"]!.GetValue<int>()
@@ -476,11 +527,11 @@ public sealed class JsonProfileParser : IProfileParser
     {
         "CPUTemperature" => 1,
         "GPUTemperature" => 2,
-        "CPULoad" => 3,
-        "GPULoad" => 4,
-        "PumpRPM" => 5,
-        "CoolantTemp" => 6,
-        _ => 1
+        "CPULoad"        => 3,
+        "GPULoad"        => 4,
+        "PumpRPM"        => 5,
+        "CoolantTemp"    => 6,
+        _                => 1
     };
 
     private static List<LightingColor> ExtractColors(JsonArray? colorsArray)

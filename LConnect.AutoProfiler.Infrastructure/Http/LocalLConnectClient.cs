@@ -39,7 +39,6 @@ public sealed class LocalLConnectClient : ILConnectApiClient
 
         var url = $"{_options.BaseUrl}?action=Device&devicePath={encodedPath}&type={config.DeviceType}";
 
-        // Sélection du bon payload selon le type
         object payload = config.DeviceType switch
         {
             "LightingSetting" => (object)(config.Settings
@@ -62,15 +61,43 @@ public sealed class LocalLConnectClient : ILConnectApiClient
 
         _logger.LogDebug("POST {Url} | Payload: {Payload}", url, json);
 
+        await PostAsync(url, json, content, config.DeviceType, config.DevicePath);
+    }
+
+    public async Task SendMergeOrderAsync(string devicePath, MergeOrderConfig mergeOrder)
+    {
+        var encodedPath = Uri.EscapeDataString(
+            Convert.ToBase64String(Encoding.UTF8.GetBytes(devicePath)));
+
+        // Étape 1 : MergeOrder — envoie l'ordre des devices [0,1,2,3]
+        var urlOrder = $"{_options.BaseUrl}?action=Device&devicePath={encodedPath}&type=MergeOrder";
+        var jsonOrder = JsonSerializer.Serialize(mergeOrder.DeviceOrder, JsonOpts);
+        var contentOrder = new StringContent(jsonOrder, Encoding.UTF8, "application/json");
+        _logger.LogDebug("POST {Url} | Payload: {Payload}", urlOrder, jsonOrder);
+        await PostAsync(urlOrder, jsonOrder, contentOrder, "MergeOrder", devicePath);
+
+        // Étape 2 : MergeLightingSetting — si présent
+        if (mergeOrder.LightingSetting is not null)
+        {
+            var urlLighting = $"{_options.BaseUrl}?action=Device&devicePath={encodedPath}&type=MergeLightingSetting";
+            var jsonLighting = JsonSerializer.Serialize(mergeOrder.LightingSetting, JsonOpts);
+            var contentLighting = new StringContent(jsonLighting, Encoding.UTF8, "application/json");
+            _logger.LogDebug("POST {Url} | Payload: {Payload}", urlLighting, jsonLighting);
+            await PostAsync(urlLighting, jsonLighting, contentLighting, "MergeLightingSetting", devicePath);
+        }
+    }
+
+    private async Task PostAsync(string url, string json, StringContent content, string type, string devicePath)
+    {
         try
         {
             var response = await _http.PostAsync(url, content);
 
             if (response.IsSuccessStatusCode)
-                _logger.LogInformation("✓ [{Type}] OK — {Path}", config.DeviceType, config.DevicePath);
+                _logger.LogInformation("✓ [{Type}] OK — {Path}", type, devicePath);
             else
                 _logger.LogWarning("✗ [{Type}] HTTP {Status} — {Body}",
-                    config.DeviceType,
+                    type,
                     (int)response.StatusCode,
                     await response.Content.ReadAsStringAsync());
         }
