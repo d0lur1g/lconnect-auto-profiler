@@ -26,7 +26,6 @@ public sealed class JsonProfileParser : IProfileParser
     private readonly IHostEnvironment _env;
     private readonly ILogger<JsonProfileParser> _logger;
 
-    // Cache simple par nom de profil pour éviter les relectures inutiles
     private readonly Dictionary<string, LightingProfile> _profileCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly object _lock = new();
 
@@ -86,10 +85,6 @@ public sealed class JsonProfileParser : IProfileParser
         return profile;
     }
 
-    /// <summary>
-    /// Invalide le cache d'un profil (ou de tous les profils si fileName est null ou vide).
-    /// Appelé par ProfilesWatcher lors de modifications sur data/profiles/.
-    /// </summary>
     public void InvalidateProfileCache(string? fileName)
     {
         lock (_lock)
@@ -110,18 +105,14 @@ public sealed class JsonProfileParser : IProfileParser
 
             var profileName = Path.GetFileNameWithoutExtension(fileName);
             if (_profileCache.Remove(profileName))
-            {
                 _logger.LogInformation("JsonProfileParser: cache invalidé pour le profil '{Name}'.", profileName);
-            }
             else
-            {
                 _logger.LogDebug("JsonProfileParser: aucun cache pour le profil '{Name}' à invalider.", profileName);
-            }
         }
     }
 
     // =========================================================================
-    // GA II : LightingSetting + SetFanSpeed
+    // GA II
     // =========================================================================
 
     private void ParseGaII(JsonNode dataEntry, LightingProfile profile)
@@ -150,11 +141,28 @@ public sealed class JsonProfileParser : IProfileParser
             if (groupNode is null) { groupIndex++; continue; }
 
             var groupName = groupNode["GroupName"]?.GetValue<string>() ?? string.Empty;
-            var activeInner = groupNode["LightingModeInner"]?.GetValue<int>() ?? 0;
-            var activeOuter = groupNode["LightingModeOuter"]?.GetValue<int>() ?? 0;
+            var isIndividual = groupNode["IsIndividualMode"]?.GetValue<bool>() ?? false;
+            var lightingMode = groupNode["LightingMode"]?.GetValue<int>() ?? 0;
+            var lightingModeInner = groupNode["LightingModeInner"]?.GetValue<int>() ?? 0;
+            var lightingModeOuter = groupNode["LightingModeOuter"]?.GetValue<int>() ?? 0;
 
-            _logger.LogDebug("GA II Group[{Index}] '{Name}': Inner={Inner}, Outer={Outer}",
-                groupIndex, groupName, activeInner, activeOuter);
+            // Résolution des modes actifs Inner / Outer
+            // Si IsIndividualMode = false, les deux zones utilisent LightingMode.
+            var activeInner = isIndividual ? lightingModeInner : lightingMode;
+            var activeOuter = isIndividual ? lightingModeOuter : lightingMode;
+
+            _logger.LogDebug(
+                "GA II Group[{Index}] '{Name}': IsIndividual={Ind} LightingMode={Mode} Inner={Inner} Outer={Outer}",
+                groupIndex, groupName, isIndividual, lightingMode, activeInner, activeOuter);
+
+            // Stocker les métadonnées de mode sur le premier groupe (portées par DeviceConfig)
+            if (groupIndex == 0)
+            {
+                lightingConfig.IsIndividualMode = isIndividual;
+                lightingConfig.LightingMode = lightingMode;
+                lightingConfig.LightingModeInner = lightingModeInner;
+                lightingConfig.LightingModeOuter = lightingModeOuter;
+            }
 
             var allSettings = groupNode["LightingSettings"]?.AsObject();
             if (allSettings is not null)
@@ -170,10 +178,10 @@ public sealed class JsonProfileParser : IProfileParser
             {
                 var activeMode = rpmSetting["Mode"]?.GetValue<int>() ?? 1;
                 var minSpeed = rpmSetting["Profiles"]?.AsObject() is { } prof
-                                  ? ResolveMinSpeed(prof, activeMode)
-                                  : 210;
-                var fanProfiles = rpmSetting["Profiles"]?.AsObject();
-                var fanCurve = ExtractActiveFanCurve(fanProfiles, activeMode, groupName, minSpeed, isGaII: true);
+                                 ? ResolveMinSpeed(prof, activeMode)
+                                 : 210;
+                var fanCurve = ExtractActiveFanCurve(
+                    rpmSetting["Profiles"]?.AsObject(), activeMode, groupName, minSpeed, isGaII: true);
                 if (fanCurve is not null)
                     fanConfig.FanGroups!.Add(new FanGroupConfig { FanGroupIndex = groupIndex, Config = fanCurve });
             }
@@ -189,7 +197,7 @@ public sealed class JsonProfileParser : IProfileParser
     }
 
     // =========================================================================
-    // AIO : ScreenLEDLighting + PumpSpeed + FanSpeed
+    // AIO
     // =========================================================================
 
     private void ParseAio(JsonNode dataEntry, LightingProfile profile)
@@ -211,7 +219,8 @@ public sealed class JsonProfileParser : IProfileParser
 
         var pumpSetting = data["Pump"];
         var activePumpMode = pumpSetting?["Mode"]?.GetValue<int>() ?? 10;
-        var pumpCurve = ExtractActiveFanCurve(pumpSetting?["Profiles"]?.AsObject(), activePumpMode, "Pump", minSpeed: 0, isGaII: false);
+        var pumpCurve = ExtractActiveFanCurve(
+            pumpSetting?["Profiles"]?.AsObject(), activePumpMode, "Pump", minSpeed: 0, isGaII: false);
         if (pumpCurve is not null)
             profile.Devices.Add(new DeviceConfig
             {
@@ -222,7 +231,8 @@ public sealed class JsonProfileParser : IProfileParser
 
         var fanSetting = data["Fan"];
         var activeFanMode = fanSetting?["Mode"]?.GetValue<int>() ?? 1;
-        var fanCurve = ExtractActiveFanCurve(fanSetting?["Profiles"]?.AsObject(), activeFanMode, "AIO Fan", minSpeed: 0, isGaII: false);
+        var fanCurve = ExtractActiveFanCurve(
+            fanSetting?["Profiles"]?.AsObject(), activeFanMode, "AIO Fan", minSpeed: 0, isGaII: false);
         if (fanCurve is not null)
             profile.Devices.Add(new DeviceConfig
             {
@@ -245,11 +255,6 @@ public sealed class JsonProfileParser : IProfileParser
         return Path.GetFullPath(Path.Combine(repoRoot, relativePath));
     }
 
-    /// <summary>
-    /// Résout le LightingSetting actif depuis le catalogue LightingSettings du groupe.
-    /// Speed et Brightness sont lus directement depuis le nœud JSON du mode actif.
-    /// Speed null dans le JSON (ex: StaticColor) est conservé tel quel.
-    /// </summary>
     private LightingSetting ExtractActiveLightingSetting(
         JsonObject allSettings, int targetMode, int port, string label)
     {
@@ -272,17 +277,18 @@ public sealed class JsonProfileParser : IProfileParser
                 ? node["Direction"]!.GetValue<int>()
                 : 0;
 
-            _logger.LogDebug("  [{Label}] mode {Mode} -> '{Key}' | Speed={Speed} Brightness={Brightness} Direction={Direction}",
+            _logger.LogDebug(
+                "  [{Label}] mode {Mode} -> '{Key}' | Speed={Speed} Brightness={Brightness} Direction={Direction}",
                 label, targetMode, entry.Key, speed?.ToString() ?? "null", brightness, direction);
 
             return new LightingSetting
             {
-                Port       = port,
-                Mode       = targetMode,
-                Speed      = speed,
-                Direction  = direction,
+                Port = port,
+                Mode = targetMode,
+                Speed = speed,
+                Direction = direction,
                 Brightness = brightness,
-                Colors     = ExtractColors(node["Colors"]?.AsArray())
+                Colors = ExtractColors(node["Colors"]?.AsArray())
             };
         }
 
@@ -450,10 +456,6 @@ public sealed class JsonProfileParser : IProfileParser
         };
     }
 
-    /// <summary>
-    /// Extrait Speed, Brightness, Direction et Colors depuis un noeud JSON AIO.
-    /// Fallbacks si clé absente ou null : Speed=75, Brightness=100, Direction=0.
-    /// </summary>
     private static AioLightingSection ExtractAioSection(JsonNode? node)
     {
         if (node is null) return new AioLightingSection { Speed = 75, Brightness = 100 };
@@ -481,11 +483,6 @@ public sealed class JsonProfileParser : IProfileParser
         _ => 1
     };
 
-    /// <summary>
-    /// Extrait la liste des couleurs depuis un tableau JSON.
-    /// Chaque couleur peut avoir 0 à 4 entrées selon le mode d'éclairage.
-    /// ColorContext est lu depuis le JSON (string ou null).
-    /// </summary>
     private static List<LightingColor> ExtractColors(JsonArray? colorsArray)
     {
         if (colorsArray is null) return new List<LightingColor>();
