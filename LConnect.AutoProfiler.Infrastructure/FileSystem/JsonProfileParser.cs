@@ -64,6 +64,7 @@ public sealed class JsonProfileParser : IProfileParser
         var profile = new LightingProfile { ProfileName = profileName };
 
         var datasNode = root["Datas"]?.AsArray() ?? new JsonArray();
+        string gaIIDevicePath = string.Empty;
 
         foreach (var dataEntry in datasNode)
         {
@@ -73,12 +74,21 @@ public sealed class JsonProfileParser : IProfileParser
             var subType  = dataEntry["SubType"]?.GetValue<int>()  ?? -1;
 
             if (mainType == MainTypeDevice && subType == SubTypeGaII)
+            {
+                var path = dataEntry["Metadata"]?.GetValue<string>() ?? string.Empty;
+                if (!string.IsNullOrEmpty(path))
+                    gaIIDevicePath = path;
                 ParseGaII(dataEntry, profile);
+            }
             else if (mainType == MainTypeDevice && subType == SubTypeAio)
                 ParseAio(dataEntry, profile);
             else if (mainType == MainTypeMerge)
-                ParseMerge(dataEntry, profile);
+                ParseMerge(dataEntry, profile, gaIIDevicePath);
         }
+
+        // Si MergeOrder a été parsé avant le GA II (ordre inverse dans Datas), on complète le devicePath
+        if (profile.MergeOrder is not null && string.IsNullOrEmpty(profile.MergeOrder.DevicePath))
+            profile.MergeOrder.DevicePath = gaIIDevicePath;
 
         _logger.LogInformation("Profile '{Name}' parsed: {DeviceCount} device(s), MergeOrder={HasMerge}.",
             profileName, profile.Devices.Count, profile.MergeOrder is not null);
@@ -116,6 +126,16 @@ public sealed class JsonProfileParser : IProfileParser
                 _logger.LogDebug("JsonProfileParser: aucun cache pour le profil '{Name}' à invalider.", profileName);
         }
     }
+
+    // =========================================================================
+    // Speed conversion
+    // L'API L-Connect interprète Speed comme un délai (plus la valeur est basse = plus rapide).
+    // Les profils JSON stockent Speed en % (0=lent, 100=rapide).
+    // Conversion : apiSpeed = (100 - speedPercent) * 2   =>  [0%=200, 25%=150, 75%=50, 100%=0]
+    // =========================================================================
+
+    private static int ConvertSpeedToApiValue(int speedPercent)
+        => Math.Clamp((100 - speedPercent) * 2, 0, 200);
 
     // =========================================================================
     // GA II
@@ -249,9 +269,13 @@ public sealed class JsonProfileParser : IProfileParser
     // Merge (MainType=2)
     // =========================================================================
 
-    private void ParseMerge(JsonNode dataEntry, LightingProfile profile)
+    private void ParseMerge(JsonNode dataEntry, LightingProfile profile, string fallbackDevicePath)
     {
+        // Le noeud MainType=2 a souvent un Metadata vide ; on utilise le devicePath GA II en fallback
         var devicePath = dataEntry["Metadata"]?.GetValue<string>() ?? string.Empty;
+        if (string.IsNullOrEmpty(devicePath))
+            devicePath = fallbackDevicePath;
+
         var data = dataEntry["Data"];
         if (data is null) return;
 
@@ -273,10 +297,11 @@ public sealed class JsonProfileParser : IProfileParser
         var mergeNode = data["MergeLightingSetting"];
         if (mergeNode is not null)
         {
+            var rawSpeed = mergeNode["Speed"]?.GetValue<int>() ?? 0;
             lightingSetting = new MergeLightingSetting
             {
                 Mode       = mergeNode["Mode"]?.GetValue<int>()       ?? 0,
-                Speed      = mergeNode["Speed"]?.GetValue<int>()      ?? 0,
+                Speed      = ConvertSpeedToApiValue(rawSpeed),
                 Brightness = mergeNode["Brightness"]?.GetValue<int>() ?? 0,
                 Direction  = mergeNode["Direction"]?.GetValue<int>()  ?? 0
             };
@@ -284,13 +309,13 @@ public sealed class JsonProfileParser : IProfileParser
 
         profile.MergeOrder = new MergeOrderConfig
         {
-            DeviceOrder    = deviceOrder,
+            DeviceOrder     = deviceOrder,
             LightingSetting = lightingSetting,
-            DevicePath     = devicePath
+            DevicePath      = devicePath
         };
 
-        _logger.LogDebug("Merge parsed: DeviceOrder=[{Order}], LightingSetting={HasLighting}",
-            string.Join(",", deviceOrder), lightingSetting is not null);
+        _logger.LogDebug("Merge parsed: DevicePath='{Path}', DeviceOrder=[{Order}], LightingSetting={HasLighting}",
+            devicePath, string.Join(",", deviceOrder), lightingSetting is not null);
     }
 
     // =========================================================================
@@ -315,9 +340,9 @@ public sealed class JsonProfileParser : IProfileParser
             if (node?["Mode"]?.GetValue<int>() != targetMode) continue;
 
             var speedNode = node["Speed"];
-            int? speed = (speedNode is not null && speedNode.GetValueKind() != System.Text.Json.JsonValueKind.Null)
-                ? speedNode.GetValue<int>()
-                : null;
+            int? apiSpeed = null;
+            if (speedNode is not null && speedNode.GetValueKind() != System.Text.Json.JsonValueKind.Null)
+                apiSpeed = ConvertSpeedToApiValue(speedNode.GetValue<int>());
 
             var brightnessNode = node["Brightness"];
             int brightness = (brightnessNode is not null && brightnessNode.GetValueKind() != System.Text.Json.JsonValueKind.Null)
@@ -329,14 +354,17 @@ public sealed class JsonProfileParser : IProfileParser
                 : 0;
 
             _logger.LogDebug(
-                "  [{Label}] mode {Mode} -> '{Key}' | Speed={Speed} Brightness={Brightness} Direction={Direction}",
-                label, targetMode, entry.Key, speed?.ToString() ?? "null", brightness, direction);
+                "  [{Label}] mode {Mode} -> '{Key}' | SpeedRaw={SpeedRaw} SpeedApi={SpeedApi} Brightness={Brightness} Direction={Direction}",
+                label, targetMode, entry.Key,
+                speedNode?.GetValue<int>().ToString() ?? "null",
+                apiSpeed?.ToString() ?? "null",
+                brightness, direction);
 
             return new LightingSetting
             {
                 Port = port,
                 Mode = targetMode,
-                Speed = speed,
+                Speed = apiSpeed,
                 Direction = direction,
                 Brightness = brightness,
                 Colors = ExtractColors(node["Colors"]?.AsArray())
