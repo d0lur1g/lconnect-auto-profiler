@@ -9,11 +9,13 @@ public class MergeOrderConfig
 
     /// <summary>
     /// Ordre des devices transmis à l'endpoint MergeOrder (ex: [0,1,2,3]).
+    /// Correspond au payload de type=MergeOrder.
     /// </summary>
     public int[] DeviceOrder { get; set; } = [0, 1, 2, 3];
 
     /// <summary>
-    /// Paramètres d'éclairage du mode Merge.
+    /// Paramètres d'éclairage transmis via type=LightingSetting sur le device Merge.
+    /// Même structure que l'appel LightingSetting standard — un objet par port.
     /// </summary>
-    public MergeLightingSetting? LightingSetting { get; set; }
+    public List<LightingSetting>? LightingSettings { get; set; }
 }
