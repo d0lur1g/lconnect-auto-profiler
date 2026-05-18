@@ -12,6 +12,31 @@ public class DeviceConfig
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public List<LightingSetting>? Settings { get; set; }
 
+    /// <summary>
+    /// Vrai si les zones Inner et Outer sont configurées indépendamment.
+    /// Lorsque false, LightingMode s'applique à toutes les zones.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? IsIndividualMode { get; set; }
+
+    /// <summary>
+    /// Mode d'éclairage global (utilisé quand IsIndividualMode = false).
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? LightingMode { get; set; }
+
+    /// <summary>
+    /// Mode d'éclairage de la zone Inner (utilisé quand IsIndividualMode = true).
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? LightingModeInner { get; set; }
+
+    /// <summary>
+    /// Mode d'éclairage de la zone Outer (utilisé quand IsIndividualMode = true).
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? LightingModeOuter { get; set; }
+
     // Éclairage AIO écran
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public AioLightingConfig? AioLighting { get; set; }
