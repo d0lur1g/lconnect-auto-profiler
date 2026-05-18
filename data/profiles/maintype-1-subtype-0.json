@@ -1,0 +1,462 @@
+{
+  "MainType": 1,
+  "SubType": 0,
+  "Metadata": null,
+  "Data": {
+    "CurrentEffect": 0,
+    "ProductDemoType": 0,
+    "LightingSettings": {
+      "Rainbow": {
+        "Colors": [],
+        "Speed": 75,
+        "Brightness": 100,
+        "Direction": 1
+      },
+      "RainbowMorph": {
+        "Colors": [],
+        "Speed": 75,
+        "Brightness": 100,
+        "Direction": 0
+      },
+      "StaticColor": {
+        "Colors": [
+          {
+            "ColorContext": null,
+            "A": 255,
+            "R": 0,
+            "G": 255,
+            "B": 170,
+            "ScA": 1,
+            "ScR": 0,
+            "ScG": 1,
+            "ScB": 0.401977807
+          },
+          {
+            "ColorContext": null,
+            "A": 255,
+            "R": 255,
+            "G": 0,
+            "B": 0,
+            "ScA": 1,
+            "ScR": 1,
+            "ScG": 0,
+            "ScB": 0
+          },
+          {
+            "ColorContext": null,
+            "A": 255,
+            "R": 150,
+            "G": 255,
+            "B": 0,
+            "ScA": 1,
+            "ScR": 0.304987341,
+            "ScG": 1,
+            "ScB": 0
+          },
+          {
+            "ColorContext": null,
+            "A": 255,
+            "R": 255,
+            "G": 215,
+            "B": 0,
+            "ScA": 1,
+            "ScR": 1,
+            "ScG": 0.679542482,
+            "ScB": 0
+          }
+        ],
+        "Speed": -2147483648,
+        "Brightness": 100,
+        "Direction": 0
+      },
+      "Breathing": {
+        "Colors": [
+          {
+            "ColorContext": null,
+            "A": 255,
+            "R": 0,
+            "G": 255,
+            "B": 170,
+            "ScA": 1,
+            "ScR": 0,
+            "ScG": 1,
+            "ScB": 0.401977807
+          },
+          {
+            "ColorContext": null,
+            "A": 255,
+            "R": 255,
+            "G": 0,
+            "B": 0,
+            "ScA": 1,
+            "ScR": 1,
+            "ScG": 0,
+            "ScB": 0
+          },
+          {
+            "ColorContext": null,
+            "A": 255,
+            "R": 150,
+            "G": 255,
+            "B": 0,
+            "ScA": 1,
+            "ScR": 0.304987341,
+            "ScG": 1,
+            "ScB": 0
+          },
+          {
+            "ColorContext": null,
+            "A": 255,
+            "R": 255,
+            "G": 215,
+            "B": 0,
+            "ScA": 1,
+            "ScR": 1,
+            "ScG": 0.679542482,
+            "ScB": 0
+          }
+        ],
+        "Speed": 75,
+        "Brightness": 100,
+        "Direction": 0
+      },
+      "Meteor": {
+        "Colors": [
+          {
+            "ColorContext": null,
+            "A": 255,
+            "R": 0,
+            "G": 215,
+            "B": 255,
+            "ScA": 1,
+            "ScR": 0,
+            "ScG": 0.679542482,
+            "ScB": 1
+          },
+          {
+            "ColorContext": null,
+            "A": 255,
+            "R": 255,
+            "G": 0,
+            "B": 0,
+            "ScA": 1,
+            "ScR": 1,
+            "ScG": 0,
+            "ScB": 0
+          },
+          {
+            "ColorContext": null,
+            "A": 255,
+            "R": 0,
+            "G": 255,
+            "B": 0,
+            "ScA": 1,
+            "ScR": 0,
+            "ScG": 1,
+            "ScB": 0
+          },
+          {
+            "ColorContext": null,
+            "A": 255,
+            "R": 150,
+            "G": 255,
+            "B": 0,
+            "ScA": 1,
+            "ScR": 0.304987341,
+            "ScG": 1,
+            "ScB": 0
+          }
+        ],
+        "Speed": 75,
+        "Brightness": 100,
+        "Direction": 1
+      },
+      "Runway": {
+        "Colors": [
+          {
+            "ColorContext": null,
+            "A": 255,
+            "R": 255,
+            "G": 0,
+            "B": 0,
+            "ScA": 1,
+            "ScR": 1,
+            "ScG": 0,
+            "ScB": 0
+          },
+          {
+            "ColorContext": null,
+            "A": 255,
+            "R": 0,
+            "G": 255,
+            "B": 170,
+            "ScA": 1,
+            "ScR": 0,
+            "ScG": 1,
+            "ScB": 0.401977807
+          }
+        ],
+        "Speed": 50,
+        "Brightness": 100,
+        "Direction": 0
+      },
+      "RainbowWireless": {
+        "Colors": [],
+        "Speed": 75,
+        "Brightness": 100,
+        "Direction": 1
+      },
+      "RainbowMorphWireless": {
+        "Colors": [],
+        "Speed": 75,
+        "Brightness": 100,
+        "Direction": 0
+      },
+      "StaticColorWireless": {
+        "Colors": [
+          {
+            "ColorContext": null,
+            "A": 255,
+            "R": 0,
+            "G": 215,
+            "B": 255,
+            "ScA": 1,
+            "ScR": 0,
+            "ScG": 0.679542482,
+            "ScB": 1
+          }
+        ],
+        "Speed": -2147483648,
+        "Brightness": 100,
+        "Direction": 0
+      },
+      "BreathingWireless": {
+        "Colors": [
+          {
+            "ColorContext": null,
+            "A": 255,
+            "R": 170,
+            "G": 0,
+            "B": 255,
+            "ScA": 1,
+            "ScR": 0.401977807,
+            "ScG": 0,
+            "ScB": 1
+          }
+        ],
+        "Speed": 75,
+        "Brightness": 100,
+        "Direction": 0
+      },
+      "MeteorWireless": {
+        "Colors": [
+          {
+            "ColorContext": null,
+            "A": 255,
+            "R": 0,
+            "G": 215,
+            "B": 255,
+            "ScA": 1,
+            "ScR": 0,
+            "ScG": 0.679542482,
+            "ScB": 1
+          }
+        ],
+        "Speed": 75,
+        "Brightness": 100,
+        "Direction": 1
+      },
+      "RunwayWireless": {
+        "Colors": [
+          {
+            "ColorContext": null,
+            "A": 255,
+            "R": 255,
+            "G": 0,
+            "B": 0,
+            "ScA": 1,
+            "ScR": 1,
+            "ScG": 0,
+            "ScB": 0
+          },
+          {
+            "ColorContext": null,
+            "A": 255,
+            "R": 0,
+            "G": 255,
+            "B": 170,
+            "ScA": 1,
+            "ScR": 0,
+            "ScG": 1,
+            "ScB": 0.401977807
+          }
+        ],
+        "Speed": 50,
+        "Brightness": 100,
+        "Direction": 0
+      },
+      "StackWireless": {
+        "Colors": [
+          {
+            "ColorContext": null,
+            "A": 255,
+            "R": 0,
+            "G": 0,
+            "B": 255,
+            "ScA": 1,
+            "ScR": 0,
+            "ScG": 0,
+            "ScB": 1
+          }
+        ],
+        "Speed": 50,
+        "Brightness": 100,
+        "Direction": 1
+      },
+      "TwinkleWireless": {
+        "Colors": [],
+        "Speed": 50,
+        "Brightness": 100,
+        "Direction": 0
+      },
+      "ColorCycleWireless": {
+        "Colors": [
+          {
+            "ColorContext": null,
+            "A": 255,
+            "R": 0,
+            "G": 0,
+            "B": 255,
+            "ScA": 1,
+            "ScR": 0,
+            "ScG": 0,
+            "ScB": 1
+          },
+          {
+            "ColorContext": null,
+            "A": 255,
+            "R": 255,
+            "G": 0,
+            "B": 0,
+            "ScA": 1,
+            "ScR": 1,
+            "ScG": 0,
+            "ScB": 0
+          },
+          {
+            "ColorContext": null,
+            "A": 255,
+            "R": 255,
+            "G": 255,
+            "B": 0,
+            "ScA": 1,
+            "ScR": 1,
+            "ScG": 1,
+            "ScB": 0
+          }
+        ],
+        "Speed": 75,
+        "Brightness": 100,
+        "Direction": 1
+      },
+      "CoverCycleWireless": {
+        "Colors": [
+          {
+            "ColorContext": null,
+            "A": 255,
+            "R": 0,
+            "G": 0,
+            "B": 255,
+            "ScA": 1,
+            "ScR": 0,
+            "ScG": 0,
+            "ScB": 1
+          },
+          {
+            "ColorContext": null,
+            "A": 255,
+            "R": 255,
+            "G": 0,
+            "B": 0,
+            "ScA": 1,
+            "ScR": 1,
+            "ScG": 0,
+            "ScB": 0
+          }
+        ],
+        "Speed": 75,
+        "Brightness": 100,
+        "Direction": 1
+      },
+      "WaveWireless": {
+        "Colors": [
+          {
+            "ColorContext": null,
+            "A": 255,
+            "R": 134,
+            "G": 0,
+            "B": 255,
+            "ScA": 1,
+            "ScR": 0.238397598,
+            "ScG": 0,
+            "ScB": 1
+          }
+        ],
+        "Speed": 75,
+        "Brightness": 100,
+        "Direction": 1
+      },
+      "MeteorShowerWireless": {
+        "Colors": [
+          {
+            "ColorContext": null,
+            "A": 255,
+            "R": 255,
+            "G": 0,
+            "B": 128,
+            "ScA": 1,
+            "ScR": 1,
+            "ScG": 0,
+            "ScB": 0.215860531
+          },
+          {
+            "ColorContext": null,
+            "A": 255,
+            "R": 0,
+            "G": 0,
+            "B": 227,
+            "ScA": 1,
+            "ScR": 0,
+            "ScG": 0,
+            "ScB": 0.768151164
+          },
+          {
+            "ColorContext": null,
+            "A": 255,
+            "R": 249,
+            "G": 249,
+            "B": 0,
+            "ScA": 1,
+            "ScR": 0.947306514,
+            "ScG": 0.947306514,
+            "ScB": 0
+          },
+          {
+            "ColorContext": null,
+            "A": 255,
+            "R": 0,
+            "G": 236,
+            "B": 0,
+            "ScA": 1,
+            "ScR": 0,
+            "ScG": 0.838799,
+            "ScB": 0
+          }
+        ],
+        "Speed": 75,
+        "Brightness": 100,
+        "Direction": 1
+      }
+    }
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "MainType": 2,
+  "SubType": 0,
+  "Metadata": null,
+  "Data": {
+    "DeviceList": [],
+    "MergeLightingSetting": {
+      "Mode": 1,
+      "Colors": null,
+      "Speed": 50,
+      "Brightness": 50,
+      "Direction": 0
+    }
+  }
+}
