@@ -26,6 +26,10 @@ public sealed class JsonProfileParser : IProfileParser
     private readonly IHostEnvironment _env;
     private readonly ILogger<JsonProfileParser> _logger;
 
+    // Cache simple par nom de profil pour éviter les relectures inutiles
+    private readonly Dictionary<string, LightingProfile> _profileCache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly object _lock = new();
+
     public JsonProfileParser(
         IOptions<ProfileParserOptions> options,
         IHostEnvironment env,
@@ -38,6 +42,15 @@ public sealed class JsonProfileParser : IProfileParser
 
     public async Task<LightingProfile> ParseProfileAsync(string profileName)
     {
+        lock (_lock)
+        {
+            if (_profileCache.TryGetValue(profileName, out var cached))
+            {
+                _logger.LogDebug("JsonProfileParser: profil '{Name}' servi depuis le cache.", profileName);
+                return cached;
+            }
+        }
+
         var dir = ResolvePath(_options.ProfilesDirectory);
         var filePath = Path.Combine(dir, $"{profileName}.json");
 
@@ -65,7 +78,46 @@ public sealed class JsonProfileParser : IProfileParser
         _logger.LogInformation("Profile '{Name}' parsed: {DeviceCount} device(s).",
             profileName, profile.Devices.Count);
 
+        lock (_lock)
+        {
+            _profileCache[profileName] = profile;
+        }
+
         return profile;
+    }
+
+    /// <summary>
+    /// Invalide le cache d'un profil (ou de tous les profils si fileName est null ou vide).
+    /// Appelé par ProfilesWatcher lors de modifications sur data/profiles/.
+    /// </summary>
+    public void InvalidateProfileCache(string? fileName)
+    {
+        lock (_lock)
+        {
+            if (string.IsNullOrEmpty(fileName))
+            {
+                _profileCache.Clear();
+                _logger.LogInformation("JsonProfileParser: cache complet des profils vidé.");
+                return;
+            }
+
+            if (!fileName.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+            {
+                _profileCache.Clear();
+                _logger.LogInformation("JsonProfileParser: changement non-JSON détecté, cache complet vidé.");
+                return;
+            }
+
+            var profileName = Path.GetFileNameWithoutExtension(fileName);
+            if (_profileCache.Remove(profileName))
+            {
+                _logger.LogInformation("JsonProfileParser: cache invalidé pour le profil '{Name}'.", profileName);
+            }
+            else
+            {
+                _logger.LogDebug("JsonProfileParser: aucun cache pour le profil '{Name}' à invalider.", profileName);
+            }
+        }
     }
 
     // =========================================================================
