@@ -128,16 +128,6 @@ public sealed class JsonProfileParser : IProfileParser
     }
 
     // =========================================================================
-    // Speed conversion
-    // L'API L-Connect interprète Speed comme un délai (plus la valeur est basse = plus rapide).
-    // Les profils JSON stockent Speed en % (0=lent, 100=rapide).
-    // Conversion : apiSpeed = (100 - speedPercent) * 2   =>  [0%=200, 25%=150, 75%=50, 100%=0]
-    // =========================================================================
-
-    private static int ConvertSpeedToApiValue(int speedPercent)
-        => Math.Clamp((100 - speedPercent) * 2, 0, 200);
-
-    // =========================================================================
     // GA II
     // =========================================================================
 
@@ -297,11 +287,10 @@ public sealed class JsonProfileParser : IProfileParser
         var mergeNode = data["MergeLightingSetting"];
         if (mergeNode is not null)
         {
-            var rawSpeed = mergeNode["Speed"]?.GetValue<int>() ?? 0;
             lightingSetting = new MergeLightingSetting
             {
                 Mode       = mergeNode["Mode"]?.GetValue<int>()       ?? 0,
-                Speed      = ConvertSpeedToApiValue(rawSpeed),
+                Speed      = mergeNode["Speed"]?.GetValue<int>()      ?? 0,
                 Brightness = mergeNode["Brightness"]?.GetValue<int>() ?? 0,
                 Direction  = mergeNode["Direction"]?.GetValue<int>()  ?? 0
             };
@@ -340,9 +329,9 @@ public sealed class JsonProfileParser : IProfileParser
             if (node?["Mode"]?.GetValue<int>() != targetMode) continue;
 
             var speedNode = node["Speed"];
-            int? apiSpeed = null;
+            int? speed = null;
             if (speedNode is not null && speedNode.GetValueKind() != System.Text.Json.JsonValueKind.Null)
-                apiSpeed = ConvertSpeedToApiValue(speedNode.GetValue<int>());
+                speed = speedNode.GetValue<int>();
 
             var brightnessNode = node["Brightness"];
             int brightness = (brightnessNode is not null && brightnessNode.GetValueKind() != System.Text.Json.JsonValueKind.Null)
@@ -354,17 +343,14 @@ public sealed class JsonProfileParser : IProfileParser
                 : 0;
 
             _logger.LogDebug(
-                "  [{Label}] mode {Mode} -> '{Key}' | SpeedRaw={SpeedRaw} SpeedApi={SpeedApi} Brightness={Brightness} Direction={Direction}",
-                label, targetMode, entry.Key,
-                speedNode?.GetValue<int>().ToString() ?? "null",
-                apiSpeed?.ToString() ?? "null",
-                brightness, direction);
+                "  [{Label}] mode {Mode} -> '{Key}' | Speed={Speed} Brightness={Brightness} Direction={Direction}",
+                label, targetMode, entry.Key, speed?.ToString() ?? "null", brightness, direction);
 
             return new LightingSetting
             {
                 Port = port,
                 Mode = targetMode,
-                Speed = apiSpeed,
+                Speed = speed,
                 Direction = direction,
                 Brightness = brightness,
                 Colors = ExtractColors(node["Colors"]?.AsArray())
