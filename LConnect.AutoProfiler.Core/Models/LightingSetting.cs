@@ -7,11 +7,15 @@ public sealed class LightingSetting
 
     /// <summary>
     /// Vitesse de l'animation. Null si le mode ne supporte pas de vitesse (ex: StaticColor).
-    /// Valeurs possibles : null, 25, 75, 100.
+    /// Valeur brute issue du JSON profil L-Connect, passée telle quelle à l'API.
     /// </summary>
     public int? Speed      { get; init; }
 
     public int  Direction  { get; init; }
+
+    /// <summary>
+    /// Luminosité. Valeur brute issue du JSON profil L-Connect, passée telle quelle à l'API.
+    /// </summary>
     public int  Brightness { get; init; }
 
     public List<LightingColor> Colors { get; init; } = new();
