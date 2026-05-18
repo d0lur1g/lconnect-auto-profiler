@@ -21,9 +21,9 @@ namespace LConnect.AutoProfiler.Infrastructure.FileSystem;
 public sealed class JsonProfileParser : IProfileParser
 {
     private const int MainTypeDevice = 0;
-    private const int MainTypeMerge  = 2;
-    private const int SubTypeGaII    = 16789504;
-    private const int SubTypeAio     = 16846849;
+    private const int MainTypeMerge = 2;
+    private const int SubTypeGaII = 16789504;
+    private const int SubTypeAio = 16846849;
 
     private readonly ProfileParserOptions _options;
     private readonly IHostEnvironment _env;
@@ -31,6 +31,8 @@ public sealed class JsonProfileParser : IProfileParser
 
     private readonly Dictionary<string, LightingProfile> _profileCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly object _lock = new();
+
+    private static int GetForcedLightingSpeed(int port) => (port % 2 == 0) ? 1 : 255;
 
     public JsonProfileParser(
         IOptions<ProfileParserOptions> options,
@@ -71,7 +73,7 @@ public sealed class JsonProfileParser : IProfileParser
             if (dataEntry is null) continue;
 
             var mainType = dataEntry["MainType"]?.GetValue<int>() ?? -1;
-            var subType  = dataEntry["SubType"]?.GetValue<int>()  ?? -1;
+            var subType = dataEntry["SubType"]?.GetValue<int>() ?? -1;
 
             if (mainType == MainTypeDevice && subType == SubTypeGaII)
             {
@@ -299,10 +301,10 @@ public sealed class JsonProfileParser : IProfileParser
                 new LightingSetting
                 {
                     Port       = 0,
-                    Mode       = mergeNode["Mode"]?.GetValue<int>()       ?? 0,
-                    Speed      = speed,
-                    Brightness = mergeNode["Brightness"]?.GetValue<int>() ?? 0,
-                    Direction  = mergeNode["Direction"]?.GetValue<int>()  ?? 0,
+                    Mode       = mergeNode["Mode"]?.GetValue<int>() ?? 0,
+                    Speed = GetForcedLightingSpeed(0),
+                    Brightness = 0,
+                    Direction  = mergeNode["Direction"]?.GetValue<int>() ?? 0,
                     Colors     = ExtractColors(mergeNode["Colors"]?.AsArray())
                 }
             };
@@ -310,9 +312,9 @@ public sealed class JsonProfileParser : IProfileParser
 
         profile.MergeOrder = new MergeOrderConfig
         {
-            DeviceOrder      = deviceOrder,
+            DeviceOrder = deviceOrder,
             LightingSettings = lightingSettings,
-            DevicePath       = devicePath
+            DevicePath = devicePath
         };
 
         _logger.LogDebug("Merge parsed: DevicePath='{Path}', DeviceOrder=[{Order}], LightingSettings={HasLighting}",
@@ -340,15 +342,8 @@ public sealed class JsonProfileParser : IProfileParser
             var node = entry.Value;
             if (node?["Mode"]?.GetValue<int>() != targetMode) continue;
 
-            var speedNode = node["Speed"];
-            int? speed = null;
-            if (speedNode is not null && speedNode.GetValueKind() != System.Text.Json.JsonValueKind.Null)
-                speed = speedNode.GetValue<int>();
-
-            var brightnessNode = node["Brightness"];
-            int brightness = (brightnessNode is not null && brightnessNode.GetValueKind() != System.Text.Json.JsonValueKind.Null)
-                ? brightnessNode.GetValue<int>()
-                : 0;
+            int? speed = GetForcedLightingSpeed(port);
+            int brightness = 0;
 
             int direction = node["Direction"] is not null && node["Direction"]!.GetValueKind() != System.Text.Json.JsonValueKind.Null
                 ? node["Direction"]!.GetValue<int>()
@@ -553,11 +548,11 @@ public sealed class JsonProfileParser : IProfileParser
     {
         "CPUTemperature" => 1,
         "GPUTemperature" => 2,
-        "CPULoad"        => 3,
-        "GPULoad"        => 4,
-        "PumpRPM"        => 5,
-        "CoolantTemp"    => 6,
-        _                => 1
+        "CPULoad" => 3,
+        "GPULoad" => 4,
+        "PumpRPM" => 5,
+        "CoolantTemp" => 6,
+        _ => 1
     };
 
     private static List<LightingColor> ExtractColors(JsonArray? colorsArray)
