@@ -13,11 +13,7 @@ namespace LConnect.AutoProfiler.Application.Services;
 /// <summary>
 /// Charge data/rules/rules.json et détermine quel profil appliquer
 /// en fonction du processus actif.
-///
-/// Le chemin RulesFile est résolu relativement à la RACINE DU REPO
-/// (ContentRootPath = Host/, donc on remonte d'un niveau).
-/// En production (service installé), ContentRootPath = dossier d'installation,
-/// le chemin relatif fonctionne directement sans remonter.
+/// Supporte le hot-reload via invalidation du cache.
 /// </summary>
 public sealed class ProfileRuleEngine : IProfileRuleEngine
 {
@@ -27,6 +23,7 @@ public sealed class ProfileRuleEngine : IProfileRuleEngine
 
     private RulesFileContent? _cache;
     private string? _loadedFromPath;
+    private readonly object _lock = new();
 
     public ProfileRuleEngine(
         IOptionsMonitor<ProfileRuleOptions> optionsMonitor,
@@ -37,26 +34,41 @@ public sealed class ProfileRuleEngine : IProfileRuleEngine
         _env            = env;
         _logger         = logger;
 
-        _optionsMonitor.OnChange(_ => _cache = null);
+        _optionsMonitor.OnChange(_ => InvalidateCache());
     }
 
     public string GetProfileNameForProcess(string processName)
     {
         var rules = LoadRules();
 
-        foreach (var (key, profileName) in rules.Mappings)
+        if (!string.IsNullOrEmpty(processName))
         {
-            if (string.Equals(key, processName, StringComparison.OrdinalIgnoreCase))
+            foreach (var (key, profileName) in rules.Mappings)
             {
-                _logger.LogDebug("Rule match: '{Process}' -> '{Profile}'", processName, profileName);
-                return profileName;
+                if (string.Equals(key, processName, StringComparison.OrdinalIgnoreCase))
+                {
+                    _logger.LogDebug("Rule match: '{Process}' -> '{Profile}'", processName, profileName);
+                    return profileName;
+                }
             }
         }
 
         _logger.LogDebug("No rule for '{Process}', using default '{Default}'.",
-            processName, rules.Default);
+            string.IsNullOrEmpty(processName) ? "(vide)" : processName, rules.Default);
 
         return rules.Default;
+    }
+
+    public string GetDefaultProfileName() => LoadRules().Default;
+
+    /// <summary>Invalide le cache pour forcer un rechargement au prochain appel.</summary>
+    public void InvalidateCache()
+    {
+        lock (_lock)
+        {
+            _cache = null;
+            _logger.LogInformation("ProfileRuleEngine: cache invalidé — rechargement au prochain accès.");
+        }
     }
 
     // -- Private --------------------------------------------------------------
@@ -75,42 +87,45 @@ public sealed class ProfileRuleEngine : IProfileRuleEngine
 
     private RulesFileContent LoadRules()
     {
-        var path = ResolvePath(_optionsMonitor.CurrentValue.RulesFile);
-
-        if (_cache is not null && _loadedFromPath == path)
-            return _cache;
-
-        if (!File.Exists(path))
+        lock (_lock)
         {
-            _logger.LogWarning("Rules file not found: '{Path}'. Using empty rules.", path);
-            _cache          = new RulesFileContent();
-            _loadedFromPath = path;
-            return _cache;
-        }
+            var path = ResolvePath(_optionsMonitor.CurrentValue.RulesFile);
 
-        try
-        {
-            var json = File.ReadAllText(path);
-            _cache = JsonSerializer.Deserialize<RulesFileContent>(json, new JsonSerializerOptions
+            if (_cache is not null && _loadedFromPath == path)
+                return _cache;
+
+            if (!File.Exists(path))
             {
-                PropertyNameCaseInsensitive = true,
-                ReadCommentHandling        = JsonCommentHandling.Skip,
-                AllowTrailingCommas        = true
-            }) ?? new RulesFileContent();
+                _logger.LogWarning("Rules file not found: '{Path}'. Using empty rules.", path);
+                _cache          = new RulesFileContent();
+                _loadedFromPath = path;
+                return _cache;
+            }
 
-            _loadedFromPath = path;
-            _logger.LogInformation(
-                "Rules loaded from '{Path}': {Count} mapping(s), default='{Default}'.",
-                path, _cache.Mappings.Count, _cache.Default);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to load rules file '{Path}'. Using empty rules.", path);
-            _cache          = new RulesFileContent();
-            _loadedFromPath = path;
-        }
+            try
+            {
+                var json = File.ReadAllText(path);
+                _cache = JsonSerializer.Deserialize<RulesFileContent>(json, new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true,
+                    ReadCommentHandling        = JsonCommentHandling.Skip,
+                    AllowTrailingCommas        = true
+                }) ?? new RulesFileContent();
 
-        return _cache;
+                _loadedFromPath = path;
+                _logger.LogInformation(
+                    "Rules loaded from '{Path}': {Count} mapping(s), default='{Default}'.",
+                    path, _cache.Mappings.Count, _cache.Default);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to load rules file '{Path}'. Using empty rules.", path);
+                _cache          = new RulesFileContent();
+                _loadedFromPath = path;
+            }
+
+            return _cache;
+        }
     }
 
     // -- DTO interne ----------------------------------------------------------
