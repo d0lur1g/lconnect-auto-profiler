@@ -365,7 +365,13 @@ public sealed class JsonProfileParser : IProfileParser
         }
 
         _logger.LogWarning("  [{Label}] mode {Mode} not found -- using defaults.", label, targetMode);
-        return new LightingSetting { Port = port, Mode = targetMode };
+        return new LightingSetting
+        {
+            Port = port,
+            Mode = targetMode,
+            Speed = (port % 2 == 0) ? 1 : 255,
+            Brightness = 0
+        };
     }
 
     private static int ResolveMinSpeed(JsonObject profiles, int targetMode)
@@ -530,15 +536,19 @@ public sealed class JsonProfileParser : IProfileParser
 
     private static AioLightingSection ExtractAioSection(JsonNode? node)
     {
-        if (node is null) return new AioLightingSection { Speed = 75, Brightness = 100 };
-
-        var speedNode = node["Speed"];
-        var brightnessNode = node["Brightness"];
+        if (node is null)
+        {
+            return new AioLightingSection
+            {
+                Speed = 1,
+                Brightness = 0
+            };
+        }
 
         return new AioLightingSection
         {
-            Speed = (speedNode is not null && speedNode.GetValueKind() != System.Text.Json.JsonValueKind.Null) ? speedNode.GetValue<int>() : 75,
-            Brightness = (brightnessNode is not null && brightnessNode.GetValueKind() != System.Text.Json.JsonValueKind.Null) ? brightnessNode.GetValue<int>() : 100,
+            Speed = 1,
+            Brightness = 0,
             Direction = node["Direction"] is not null ? node["Direction"]!.GetValue<int>() : 0,
             Colors = ExtractColors(node["Colors"]?.AsArray())
         };
