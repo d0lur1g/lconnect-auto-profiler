@@ -245,6 +245,11 @@ public sealed class JsonProfileParser : IProfileParser
         return Path.GetFullPath(Path.Combine(repoRoot, relativePath));
     }
 
+    /// <summary>
+    /// Résout le LightingSetting actif depuis le catalogue LightingSettings du groupe.
+    /// Speed et Brightness sont lus directement depuis le nœud JSON du mode actif.
+    /// Speed null dans le JSON (ex: StaticColor) est conservé tel quel.
+    /// </summary>
     private LightingSetting ExtractActiveLightingSetting(
         JsonObject allSettings, int targetMode, int port, string label)
     {
@@ -253,16 +258,31 @@ public sealed class JsonProfileParser : IProfileParser
             var node = entry.Value;
             if (node?["Mode"]?.GetValue<int>() != targetMode) continue;
 
-            _logger.LogDebug("  [{Label}] mode {Mode} -> '{Key}'", label, targetMode, entry.Key);
+            var speedNode = node["Speed"];
+            int? speed = (speedNode is not null && speedNode.GetValueKind() != System.Text.Json.JsonValueKind.Null)
+                ? speedNode.GetValue<int>()
+                : null;
+
+            var brightnessNode = node["Brightness"];
+            int brightness = (brightnessNode is not null && brightnessNode.GetValueKind() != System.Text.Json.JsonValueKind.Null)
+                ? brightnessNode.GetValue<int>()
+                : 100;
+
+            int direction = node["Direction"] is not null && node["Direction"]!.GetValueKind() != System.Text.Json.JsonValueKind.Null
+                ? node["Direction"]!.GetValue<int>()
+                : 0;
+
+            _logger.LogDebug("  [{Label}] mode {Mode} -> '{Key}' | Speed={Speed} Brightness={Brightness} Direction={Direction}",
+                label, targetMode, entry.Key, speed?.ToString() ?? "null", brightness, direction);
 
             return new LightingSetting
             {
-                Port = port,
-                Mode = targetMode,
-                Speed = 1, // TEST HARDCODÉ — à supprimer après validation
-                Direction = node["Direction"] is not null ? node["Direction"]!.GetValue<int>() : 0,
-                Brightness = 0,
-                Colors = ExtractColors(node["Colors"]?.AsArray())
+                Port       = port,
+                Mode       = targetMode,
+                Speed      = speed,
+                Direction  = direction,
+                Brightness = brightness,
+                Colors     = ExtractColors(node["Colors"]?.AsArray())
             };
         }
 
