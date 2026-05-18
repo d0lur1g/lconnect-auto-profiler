@@ -16,7 +16,7 @@ namespace LConnect.AutoProfiler.Infrastructure.FileSystem;
 /// Lit un fichier JSON fully_decoded L-Connect et construit le LightingProfile :
 ///   Datas[MainType=0, SubType=16789504] (GA II) → LightingSetting + SetFanSpeed
 ///   Datas[MainType=0, SubType=16846849] (AIO)   → ScreenLEDLighting + PumpSpeed + FanSpeed
-///   Datas[MainType=2, SubType=0]                → MergeOrder + MergeLightingSetting
+///   Datas[MainType=2, SubType=0]                → MergeOrder + LightingSetting (type HTTP)
 /// </summary>
 public sealed class JsonProfileParser : IProfileParser
 {
@@ -283,28 +283,40 @@ public sealed class JsonProfileParser : IProfileParser
             deviceOrder = [0, 1, 2, 3];
         }
 
-        MergeLightingSetting? lightingSetting = null;
+        // Le noeud JSON s'appelle MergeLightingSetting mais le type HTTP est LightingSetting.
+        // On mappe vers List<LightingSetting> (un seul objet, port 0).
+        List<LightingSetting>? lightingSettings = null;
         var mergeNode = data["MergeLightingSetting"];
         if (mergeNode is not null)
         {
-            lightingSetting = new MergeLightingSetting
+            var speedNode = mergeNode["Speed"];
+            int? speed = (speedNode is not null && speedNode.GetValueKind() != System.Text.Json.JsonValueKind.Null)
+                ? speedNode.GetValue<int>()
+                : null;
+
+            lightingSettings = new List<LightingSetting>
             {
-                Mode       = mergeNode["Mode"]?.GetValue<int>()       ?? 0,
-                Speed      = mergeNode["Speed"]?.GetValue<int>()      ?? 0,
-                Brightness = mergeNode["Brightness"]?.GetValue<int>() ?? 0,
-                Direction  = mergeNode["Direction"]?.GetValue<int>()  ?? 0
+                new LightingSetting
+                {
+                    Port       = 0,
+                    Mode       = mergeNode["Mode"]?.GetValue<int>()       ?? 0,
+                    Speed      = speed,
+                    Brightness = mergeNode["Brightness"]?.GetValue<int>() ?? 0,
+                    Direction  = mergeNode["Direction"]?.GetValue<int>()  ?? 0,
+                    Colors     = ExtractColors(mergeNode["Colors"]?.AsArray())
+                }
             };
         }
 
         profile.MergeOrder = new MergeOrderConfig
         {
-            DeviceOrder     = deviceOrder,
-            LightingSetting = lightingSetting,
-            DevicePath      = devicePath
+            DeviceOrder      = deviceOrder,
+            LightingSettings = lightingSettings,
+            DevicePath       = devicePath
         };
 
-        _logger.LogDebug("Merge parsed: DevicePath='{Path}', DeviceOrder=[{Order}], LightingSetting={HasLighting}",
-            devicePath, string.Join(",", deviceOrder), lightingSetting is not null);
+        _logger.LogDebug("Merge parsed: DevicePath='{Path}', DeviceOrder=[{Order}], LightingSettings={HasLighting}",
+            devicePath, string.Join(",", deviceOrder), lightingSettings is not null);
     }
 
     // =========================================================================
