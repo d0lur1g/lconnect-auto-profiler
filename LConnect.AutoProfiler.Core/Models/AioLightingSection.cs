@@ -3,9 +3,16 @@ using System.Collections.Generic;
 namespace LConnect.AutoProfiler.Core.Models;
 
 /// <summary>
-/// Speed : valeur API L-Connect (délai inverse, 0=rapide, ~200=lent).
-/// null = le firmware AIO applique sa valeur par défaut.
-/// Brightness : 0 = intensité maximale.
+/// Représente une section d’éclairage AIO (Static, DynamicHigh, DynamicLow)
+/// pour le type HTTP ScreenLEDLighting.
+///
+/// Speed      : valeur brute 0–100, identique à celle stockée dans le profil L-Connect
+///              et attendue telle quelle par l’API locale.
+///              Confirmé par capture Wireshark : L-Connect envoie 25, 75, 100 directement.
+///
+/// Brightness : valeur brute 0–100, même convention.
+///
+/// Direction  : 0 = pas de direction spécifique.
 /// </summary>
 public class AioLightingSection
 {
