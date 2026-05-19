@@ -8,6 +8,8 @@ namespace LConnect.AutoProfiler.Infrastructure.Http;
 /// DTO de sérialisation pour ScreenLEDLighting.
 /// Convertit Speed (0–100 interne) → valeur API (échelle inverse 0–255).
 /// L'API interprète Speed comme un délai : 0 = le plus rapide, 255 = le plus lent.
+/// L'ordre des champs respecte le payload de référence L-Connect :
+///   Mode, IsDynamicMode, SensorType, Range, Static, DynamicHigh, DynamicLow
 /// </summary>
 internal sealed record AioLightingSectionPayload(
     List<LightingColor> Colors,
@@ -34,21 +36,25 @@ internal sealed record AioLightingSectionPayload(
         s.Direction);
 }
 
+/// <summary>
+/// Ordre des champs aligné sur le payload fonctionnel de référence :
+/// Mode → IsDynamicMode → SensorType → Range → Static → DynamicHigh → DynamicLow
+/// </summary>
 internal sealed record AioLightingPayload(
     int Mode,
     bool IsDynamicMode,
     int SensorType,
+    SensorRange Range,
     AioLightingSectionPayload Static,
     AioLightingSectionPayload DynamicHigh,
-    AioLightingSectionPayload DynamicLow,
-    SensorRange Range)
+    AioLightingSectionPayload DynamicLow)
 {
     public static AioLightingPayload From(AioLightingConfig c) => new(
         c.Mode,
         c.IsDynamicMode,
         c.SensorType,
+        c.Range,
         AioLightingSectionPayload.From(c.Static),
         AioLightingSectionPayload.From(c.DynamicHigh),
-        AioLightingSectionPayload.From(c.DynamicLow),
-        c.Range);
+        AioLightingSectionPayload.From(c.DynamicLow));
 }
