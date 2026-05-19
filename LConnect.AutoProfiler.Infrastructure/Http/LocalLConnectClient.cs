@@ -44,8 +44,9 @@ public sealed class LocalLConnectClient : ILConnectApiClient
             "LightingSetting" => (object)(config.Settings
                 ?? throw new InvalidOperationException("Settings requis pour LightingSetting")),
 
-            "ScreenLEDLighting" => config.AioLighting
-                ?? throw new InvalidOperationException("AioLighting requis pour ScreenLEDLighting"),
+            "ScreenLEDLighting" => AioLightingPayload.From(
+                config.AioLighting
+                ?? throw new InvalidOperationException("AioLighting requis pour ScreenLEDLighting")),
 
             "SetFanSpeed" => (object)(config.FanGroups
                 ?? throw new InvalidOperationException("FanGroups requis pour SetFanSpeed")),
