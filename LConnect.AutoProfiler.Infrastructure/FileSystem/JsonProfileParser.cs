@@ -32,8 +32,6 @@ public sealed class JsonProfileParser : IProfileParser
     private readonly Dictionary<string, LightingProfile> _profileCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly object _lock = new();
 
-    private static int GetForcedLightingSpeed(int port) => (port % 2 == 0) ? 1 : 255;
-
     public JsonProfileParser(
         IOptions<ProfileParserOptions> options,
         IHostEnvironment env,
@@ -296,14 +294,19 @@ public sealed class JsonProfileParser : IProfileParser
                 ? speedNode.GetValue<int>()
                 : null;
 
+            var brightnessNode = mergeNode["Brightness"];
+            int brightness = (brightnessNode is not null && brightnessNode.GetValueKind() != System.Text.Json.JsonValueKind.Null)
+                ? brightnessNode.GetValue<int>()
+                : 100;
+
             lightingSettings = new List<LightingSetting>
             {
                 new LightingSetting
                 {
                     Port       = 0,
                     Mode       = mergeNode["Mode"]?.GetValue<int>() ?? 0,
-                    Speed = GetForcedLightingSpeed(0),
-                    Brightness = 0,
+                    Speed      = speed,
+                    Brightness = brightness,
                     Direction  = mergeNode["Direction"]?.GetValue<int>() ?? 0,
                     Colors     = ExtractColors(mergeNode["Colors"]?.AsArray())
                 }
@@ -334,6 +337,10 @@ public sealed class JsonProfileParser : IProfileParser
         return Path.GetFullPath(Path.Combine(repoRoot, relativePath));
     }
 
+    /// <summary>
+    /// GA II : Speed et Brightness lus depuis le JSON (valeurs natives L-Connect).
+    /// Ne pas overrider — les valeurs 75/100 sont correctes pour ce device type.
+    /// </summary>
     private LightingSetting ExtractActiveLightingSetting(
         JsonObject allSettings, int targetMode, int port, string label)
     {
@@ -342,8 +349,15 @@ public sealed class JsonProfileParser : IProfileParser
             var node = entry.Value;
             if (node?["Mode"]?.GetValue<int>() != targetMode) continue;
 
-            int? speed = GetForcedLightingSpeed(port);
-            int brightness = 0;
+            var speedNode = node["Speed"];
+            int? speed = (speedNode is not null && speedNode.GetValueKind() != System.Text.Json.JsonValueKind.Null)
+                ? speedNode.GetValue<int>()
+                : null;
+
+            var brightnessNode = node["Brightness"];
+            int brightness = (brightnessNode is not null && brightnessNode.GetValueKind() != System.Text.Json.JsonValueKind.Null)
+                ? brightnessNode.GetValue<int>()
+                : 100;
 
             int direction = node["Direction"] is not null && node["Direction"]!.GetValueKind() != System.Text.Json.JsonValueKind.Null
                 ? node["Direction"]!.GetValue<int>()
@@ -369,8 +383,8 @@ public sealed class JsonProfileParser : IProfileParser
         {
             Port = port,
             Mode = targetMode,
-            Speed = (port % 2 == 0) ? 1 : 255,
-            Brightness = 0
+            Speed = 75,
+            Brightness = 100
         };
     }
 
@@ -534,6 +548,10 @@ public sealed class JsonProfileParser : IProfileParser
         };
     }
 
+    /// <summary>
+    /// AIO / ScreenLEDLighting : Speed forcé à 1 et Brightness à 0.
+    /// L'API AIO interprète Speed comme un délai (inverse) et Brightness=0 = 100% couleur.
+    /// </summary>
     private static AioLightingSection ExtractAioSection(JsonNode? node)
     {
         if (node is null)
