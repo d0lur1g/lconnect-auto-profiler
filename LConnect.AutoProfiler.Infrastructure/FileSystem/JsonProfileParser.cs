@@ -32,6 +32,13 @@ public sealed class JsonProfileParser : IProfileParser
     private readonly Dictionary<string, LightingProfile> _profileCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly object _lock = new();
 
+    /// <summary>
+    /// GA II : port pair (Inner) → Speed=1, Brightness=0 (animation rapide).
+    ///         port impair (Outer) → Speed=255, Brightness=0.
+    /// Observé empiriquement : l'API GA II interprète Speed comme un délai inverse.
+    /// </summary>
+    private static int GetGaIISpeed(int port) => (port % 2 == 0) ? 1 : 255;
+
     public JsonProfileParser(
         IOptions<ProfileParserOptions> options,
         IHostEnvironment env,
@@ -86,7 +93,6 @@ public sealed class JsonProfileParser : IProfileParser
                 ParseMerge(dataEntry, profile, gaIIDevicePath);
         }
 
-        // Si MergeOrder a été parsé avant le GA II (ordre inverse dans Datas), on complète le devicePath
         if (profile.MergeOrder is not null && string.IsNullOrEmpty(profile.MergeOrder.DevicePath))
             profile.MergeOrder.DevicePath = gaIIDevicePath;
 
@@ -180,10 +186,13 @@ public sealed class JsonProfileParser : IProfileParser
             var allSettings = groupNode["LightingSettings"]?.AsObject();
             if (allSettings is not null)
             {
+                int portInner = groupIndex * 2;
+                int portOuter = groupIndex * 2 + 1;
+
                 lightingConfig.Settings!.Add(
-                    ExtractActiveLightingSetting(allSettings, activeInner, port: groupIndex * 2, label: $"{groupName} Inner"));
+                    ExtractActiveLightingSetting(allSettings, activeInner, port: portInner, label: $"{groupName} Inner"));
                 lightingConfig.Settings!.Add(
-                    ExtractActiveLightingSetting(allSettings, activeOuter, port: groupIndex * 2 + 1, label: $"{groupName} Outer"));
+                    ExtractActiveLightingSetting(allSettings, activeOuter, port: portOuter, label: $"{groupName} Outer"));
             }
 
             var rpmSetting = groupNode["RPMSetting"];
@@ -261,7 +270,6 @@ public sealed class JsonProfileParser : IProfileParser
 
     private void ParseMerge(JsonNode dataEntry, LightingProfile profile, string fallbackDevicePath)
     {
-        // Le noeud MainType=2 a souvent un Metadata vide ; on utilise le devicePath GA II en fallback
         var devicePath = dataEntry["Metadata"]?.GetValue<string>() ?? string.Empty;
         if (string.IsNullOrEmpty(devicePath))
             devicePath = fallbackDevicePath;
@@ -283,8 +291,6 @@ public sealed class JsonProfileParser : IProfileParser
             deviceOrder = [0, 1, 2, 3];
         }
 
-        // Le noeud JSON s'appelle MergeLightingSetting mais le type HTTP est LightingSetting.
-        // On mappe vers List<LightingSetting> (un seul objet, port 0).
         List<LightingSetting>? lightingSettings = null;
         var mergeNode = data["MergeLightingSetting"];
         if (mergeNode is not null)
@@ -338,8 +344,10 @@ public sealed class JsonProfileParser : IProfileParser
     }
 
     /// <summary>
-    /// GA II : Speed et Brightness lus depuis le JSON (valeurs natives L-Connect).
-    /// Ne pas overrider — les valeurs 75/100 sont correctes pour ce device type.
+    /// GA II LightingSetting :
+    ///   Speed    → pair=1, impair=255  (délai inverse : 1=rapide, 255=plus lent mais fonctionnel)
+    ///   Brightness → toujours 0        (0=100% couleur côté firmware GA II)
+    ///   Mode et Colors lus depuis le JSON.
     /// </summary>
     private LightingSetting ExtractActiveLightingSetting(
         JsonObject allSettings, int targetMode, int port, string label)
@@ -349,15 +357,8 @@ public sealed class JsonProfileParser : IProfileParser
             var node = entry.Value;
             if (node?["Mode"]?.GetValue<int>() != targetMode) continue;
 
-            var speedNode = node["Speed"];
-            int? speed = (speedNode is not null && speedNode.GetValueKind() != System.Text.Json.JsonValueKind.Null)
-                ? speedNode.GetValue<int>()
-                : null;
-
-            var brightnessNode = node["Brightness"];
-            int brightness = (brightnessNode is not null && brightnessNode.GetValueKind() != System.Text.Json.JsonValueKind.Null)
-                ? brightnessNode.GetValue<int>()
-                : 100;
+            int speed = GetGaIISpeed(port);
+            const int brightness = 0;
 
             int direction = node["Direction"] is not null && node["Direction"]!.GetValueKind() != System.Text.Json.JsonValueKind.Null
                 ? node["Direction"]!.GetValue<int>()
@@ -365,7 +366,7 @@ public sealed class JsonProfileParser : IProfileParser
 
             _logger.LogDebug(
                 "  [{Label}] mode {Mode} -> '{Key}' | Speed={Speed} Brightness={Brightness} Direction={Direction}",
-                label, targetMode, entry.Key, speed?.ToString() ?? "null", brightness, direction);
+                label, targetMode, entry.Key, speed, brightness, direction);
 
             return new LightingSetting
             {
@@ -383,8 +384,8 @@ public sealed class JsonProfileParser : IProfileParser
         {
             Port = port,
             Mode = targetMode,
-            Speed = 75,
-            Brightness = 100
+            Speed = GetGaIISpeed(port),
+            Brightness = 0
         };
     }
 
@@ -549,8 +550,9 @@ public sealed class JsonProfileParser : IProfileParser
     }
 
     /// <summary>
-    /// AIO / ScreenLEDLighting : Speed forcé à 1 et Brightness à 0.
-    /// L'API AIO interprète Speed comme un délai (inverse) et Brightness=0 = 100% couleur.
+    /// AIO / ScreenLEDLighting :
+    ///   Speed=1      → animation maximale (l'API AIO interprète comme délai inverse)
+    ///   Brightness=0 → 100% intensité couleur côté firmware AIO
     /// </summary>
     private static AioLightingSection ExtractAioSection(JsonNode? node)
     {
