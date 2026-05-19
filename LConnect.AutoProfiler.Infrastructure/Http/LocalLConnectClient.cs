@@ -76,15 +76,21 @@ public sealed class LocalLConnectClient : ILConnectApiClient
         _logger.LogDebug("POST {Url} | Payload: {Payload}", urlOrder, jsonOrder);
         await PostAsync(urlOrder, jsonOrder, contentOrder, "MergeOrder", devicePath);
 
-        // Étape 2 : LightingSetting — si présent (même type HTTP que l'appel standard)
-        if (mergeOrder.LightingSettings is not null)
-        {
-            var urlLighting = $"{_options.BaseUrl}?action=Device&devicePath={encodedPath}&type=LightingSetting";
-            var jsonLighting = JsonSerializer.Serialize(mergeOrder.LightingSettings, JsonOpts);
-            var contentLighting = new StringContent(jsonLighting, Encoding.UTF8, "application/json");
-            _logger.LogDebug("POST {Url} | Payload: {Payload}", urlLighting, jsonLighting);
-            await PostAsync(urlLighting, jsonLighting, contentLighting, "LightingSetting", devicePath);
-        }
+        // Étape 2 : LightingSetting du MergeOrder — DÉSACTIVÉ temporairement pour test.
+        // Ce payload (Port=0, Mode=1, Speed=50, Brightness=50, Colors=[]) écrase le LightingSetting
+        // GA II appliqué juste avant et éteint les LEDs.
+        // À réactiver uniquement si le MergeOrder nécessite un mode de fusion spécifique.
+        //
+        // if (mergeOrder.LightingSettings is not null)
+        // {
+        //     var urlLighting = $"{_options.BaseUrl}?action=Device&devicePath={encodedPath}&type=LightingSetting";
+        //     var jsonLighting = JsonSerializer.Serialize(mergeOrder.LightingSettings, JsonOpts);
+        //     var contentLighting = new StringContent(jsonLighting, Encoding.UTF8, "application/json");
+        //     _logger.LogDebug("POST {Url} | Payload: {Payload}", urlLighting, jsonLighting);
+        //     await PostAsync(urlLighting, jsonLighting, contentLighting, "LightingSetting", devicePath);
+        // }
+
+        _logger.LogDebug("[MergeOrder] LightingSetting step skipped (disabled for test).");
     }
 
     private async Task PostAsync(string url, string json, StringContent content, string type, string devicePath)
