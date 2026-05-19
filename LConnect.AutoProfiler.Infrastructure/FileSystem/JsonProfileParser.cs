@@ -13,10 +13,10 @@ using Microsoft.Extensions.Options;
 namespace LConnect.AutoProfiler.Infrastructure.FileSystem;
 
 /// <summary>
-/// Lit un fichier JSON fully_decoded L-Connect et construit le LightingProfile :
+/// Lit un fichier JSON L-Connect et construit le LightingProfile :
 ///   Datas[MainType=0, SubType=16789504] (GA II) → LightingSetting + SetFanSpeed
 ///   Datas[MainType=0, SubType=16846849] (AIO)   → ScreenLEDLighting + PumpSpeed + FanSpeed
-///   Datas[MainType=2, SubType=0]                → MergeOrder + LightingSetting (type HTTP)
+///   Datas[MainType=2, SubType=0]                → MergeOrder
 /// </summary>
 public sealed class JsonProfileParser : IProfileParser
 {
@@ -31,32 +31,6 @@ public sealed class JsonProfileParser : IProfileParser
 
     private readonly Dictionary<string, LightingProfile> _profileCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly object _lock = new();
-
-    /// <summary>
-    /// Convertit un pourcentage de vitesse JSON [0–100] en valeur API L-Connect.
-    /// L'API interprète la valeur comme un délai inverse : 0 = animation la plus rapide.
-    /// Mapping : JSON 100% → API 0, JSON 0% → API 200.
-    /// null en entrée → null (le firmware applique sa valeur par défaut).
-    /// </summary>
-    private static int? SpeedPercentToApiValue(int? speedPercent)
-    {
-        if (speedPercent is null) return null;
-        var clamped = Math.Clamp(speedPercent.Value, 0, 100);
-        return (int)Math.Round((100 - clamped) / 100.0 * 200);
-    }
-
-    /// <summary>
-    /// Convertit un pourcentage de luminosité JSON [0–100] en valeur API L-Connect.
-    /// Sur le firmware GA II, 0 = 100% d'intensité couleur.
-    /// Mapping : JSON 100% → API 0, JSON 0% → API 100.
-    /// null en entrée → 0 (luminosité maximale par défaut).
-    /// </summary>
-    private static int BrightnessPercentToApiValue(int? brightnessPercent)
-    {
-        if (brightnessPercent is null) return 0;
-        var clamped = Math.Clamp(brightnessPercent.Value, 0, 100);
-        return (int)Math.Round((100 - clamped) / 100.0 * 100);
-    }
 
     public JsonProfileParser(
         IOptions<ProfileParserOptions> options,
@@ -315,14 +289,14 @@ public sealed class JsonProfileParser : IProfileParser
         if (mergeNode is not null)
         {
             var speedNode = mergeNode["Speed"];
-            int? speedPercent = (speedNode is not null && speedNode.GetValueKind() != System.Text.Json.JsonValueKind.Null)
+            int? rawSpeed = (speedNode is not null && speedNode.GetValueKind() != System.Text.Json.JsonValueKind.Null)
                 ? speedNode.GetValue<int>()
                 : null;
 
             var brightnessNode = mergeNode["Brightness"];
-            int? brightnessPercent = (brightnessNode is not null && brightnessNode.GetValueKind() != System.Text.Json.JsonValueKind.Null)
+            int rawBrightness = (brightnessNode is not null && brightnessNode.GetValueKind() != System.Text.Json.JsonValueKind.Null)
                 ? brightnessNode.GetValue<int>()
-                : null;
+                : 0;
 
             lightingSettings = new List<LightingSetting>
             {
@@ -330,8 +304,8 @@ public sealed class JsonProfileParser : IProfileParser
                 {
                     Port       = 0,
                     Mode       = mergeNode["Mode"]?.GetValue<int>() ?? 0,
-                    Speed      = SpeedPercentToApiValue(speedPercent),
-                    Brightness = BrightnessPercentToApiValue(brightnessPercent),
+                    Speed      = rawSpeed,
+                    Brightness = rawBrightness,
                     Direction  = mergeNode["Direction"]?.GetValue<int>() ?? 0,
                     Colors     = ExtractColors(mergeNode["Colors"]?.AsArray())
                 }
@@ -364,9 +338,8 @@ public sealed class JsonProfileParser : IProfileParser
 
     /// <summary>
     /// Extrait le LightingSetting actif depuis LightingSettings JSON.
-    /// Speed et Brightness sont lus depuis le JSON et convertis via leurs fonctions de mapping.
-    /// Speed JSON : 25/50/75/100 (%) → API : délai inverse, 0=rapide, 200=lent.
-    /// Brightness JSON : 0–100 (%) → API : 0=max, 100=min sur firmware GA II.
+    /// Speed et Brightness : valeurs brutes du JSON, transmises telles quelles à l'API.
+    /// Speed null (ex: StaticColor) → null → le champ est omis dans le payload.
     /// </summary>
     private LightingSetting ExtractActiveLightingSetting(
         JsonObject allSettings, int targetMode, int port, string label)
@@ -377,33 +350,30 @@ public sealed class JsonProfileParser : IProfileParser
             if (node?["Mode"]?.GetValue<int>() != targetMode) continue;
 
             var speedNode = node["Speed"];
-            int? speedPercent = (speedNode is not null && speedNode.GetValueKind() != System.Text.Json.JsonValueKind.Null)
+            int? rawSpeed = (speedNode is not null && speedNode.GetValueKind() != System.Text.Json.JsonValueKind.Null)
                 ? speedNode.GetValue<int>()
                 : null;
 
             var brightnessNode = node["Brightness"];
-            int? brightnessPercent = (brightnessNode is not null && brightnessNode.GetValueKind() != System.Text.Json.JsonValueKind.Null)
+            int rawBrightness = (brightnessNode is not null && brightnessNode.GetValueKind() != System.Text.Json.JsonValueKind.Null)
                 ? brightnessNode.GetValue<int>()
-                : null;
-
-            int? apiSpeed = SpeedPercentToApiValue(speedPercent);
-            int apiBrightness = BrightnessPercentToApiValue(brightnessPercent);
+                : 0;
 
             int direction = node["Direction"] is not null && node["Direction"]!.GetValueKind() != System.Text.Json.JsonValueKind.Null
                 ? node["Direction"]!.GetValue<int>()
                 : 0;
 
             _logger.LogDebug(
-                "  [{Label}] mode {Mode} -> '{Key}' | SpeedJSON={SpeedPct}% → API={ApiSpeed} | BrightnessJSON={BrightPct}% → API={ApiBrightness} | Direction={Direction}",
-                label, targetMode, entry.Key, speedPercent, apiSpeed, brightnessPercent, apiBrightness, direction);
+                "  [{Label}] mode {Mode} -> '{Key}' | Speed={Speed} | Brightness={Brightness} | Direction={Direction}",
+                label, targetMode, entry.Key, rawSpeed, rawBrightness, direction);
 
             return new LightingSetting
             {
                 Port       = port,
                 Mode       = targetMode,
-                Speed      = apiSpeed,
+                Speed      = rawSpeed,
                 Direction  = direction,
-                Brightness = apiBrightness,
+                Brightness = rawBrightness,
                 Colors     = ExtractColors(node["Colors"]?.AsArray())
             };
         }
@@ -557,7 +527,7 @@ public sealed class JsonProfileParser : IProfileParser
         }
 
         _logger.LogDebug(
-            "[AIO] source section: {Count} color(s), Speed={Speed}, Brightness={Brightness}, Direction={Direction}",
+            "[AIO] section: {Count} color(s), Speed={Speed}, Brightness={Brightness}, Direction={Direction}",
             sourceSection.Colors.Count, sourceSection.Speed, sourceSection.Brightness, sourceSection.Direction);
 
         return new AioLightingConfig
@@ -580,34 +550,30 @@ public sealed class JsonProfileParser : IProfileParser
 
     /// <summary>
     /// AIO / ScreenLEDLighting :
-    ///   Speed et Brightness lus depuis le JSON et convertis via les fonctions de mapping.
-    ///   Fallback : Speed=null (firmware default), Brightness=0 (max intensité).
+    /// Speed et Brightness : valeurs brutes JSON, transmises telles quelles.
+    /// Speed null → null. Brightness null → 0 (max intensité).
     /// </summary>
     private AioLightingSection ExtractAioSection(JsonNode? node)
     {
         if (node is null)
-        {
-            return new AioLightingSection
-            {
-                Speed      = SpeedPercentToApiValue(null),
-                Brightness = BrightnessPercentToApiValue(null)
-            };
-        }
+            return new AioLightingSection { Speed = null, Brightness = 0 };
 
         var speedNode = node["Speed"];
-        int? speedPercent = (speedNode is not null && speedNode.GetValueKind() != System.Text.Json.JsonValueKind.Null)
+        int? rawSpeed = (speedNode is not null && speedNode.GetValueKind() != System.Text.Json.JsonValueKind.Null)
             ? speedNode.GetValue<int>()
             : null;
+        // Garde-fou : Speed=-2147483648 (int.MinValue) signifie absent dans le JSON L-Connect
+        if (rawSpeed == int.MinValue) rawSpeed = null;
 
         var brightnessNode = node["Brightness"];
-        int? brightnessPercent = (brightnessNode is not null && brightnessNode.GetValueKind() != System.Text.Json.JsonValueKind.Null)
+        int rawBrightness = (brightnessNode is not null && brightnessNode.GetValueKind() != System.Text.Json.JsonValueKind.Null)
             ? brightnessNode.GetValue<int>()
-            : null;
+            : 0;
 
         return new AioLightingSection
         {
-            Speed      = SpeedPercentToApiValue(speedPercent),
-            Brightness = BrightnessPercentToApiValue(brightnessPercent),
+            Speed      = rawSpeed,
+            Brightness = rawBrightness,
             Direction  = node["Direction"] is not null ? node["Direction"]!.GetValue<int>() : 0,
             Colors     = ExtractColors(node["Colors"]?.AsArray())
         };
